@@ -88,7 +88,7 @@ const defaultSettings = {
 // Regex declarations
 const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
 // Format: Starts with 1-4 digits, space, street type (rue/bd/av/...), space, then name
-const ADDRESS_REGEX = /^\d{1,4}\s+(?:rue|boulevard|bd|avenue|av|place|impasse|route|chemin|allée|voie|square)\s+.+/i;
+const ADDRESS_REGEX = /^\d{1,4}\s+(?:rue|boulevard|bd|avenue|av|place|impasse|route|chemin|allée|voie|square|quai)\s+.+/i;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -99,6 +99,12 @@ export default function App() {
   // Search filter states
   const [clientSearch, setClientSearch] = useState('');
   const [invoiceSearch, setInvoiceSearch] = useState('');
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState([]);
+
+  // Reset selected invoices on tab change
+  useEffect(() => {
+    setSelectedInvoiceIds([]);
+  }, [activeTab]);
 
   // Modals States
   const [clientModalOpen, setClientModalOpen] = useState(false);
@@ -312,7 +318,7 @@ export default function App() {
     if (!clientForm.address.trim()) {
       errors.address = "Adresse requise";
     } else if (!ADDRESS_REGEX.test(clientForm.address)) {
-      errors.address = "Format invalide. Ex: '12 rue de Paris' (1-4 chiffres + rue/bd/av/place/impasse/route/chemin/allée/voie/square + nom)";
+      errors.address = "Format invalide. Ex: '12 rue de Paris' (1-4 chiffres + rue/bd/av/place/impasse/route/chemin/allée/voie/square/quai + nom)";
     }
 
     setClientFormErrors(errors);
@@ -440,7 +446,25 @@ export default function App() {
       "Êtes-vous sûr de vouloir supprimer cette facture ? Cette action est irréversible.",
       async () => {
         await db.invoices.delete(id);
+        setSelectedInvoiceIds(prev => prev.filter(item => item !== id));
         await loadAllData();
+      }
+    );
+  };
+
+  const handleDeleteSelectedInvoices = () => {
+    if (selectedInvoiceIds.length === 0) return;
+    showConfirm(
+      "Supprimer les factures sélectionnées",
+      `Êtes-vous sûr de vouloir supprimer les ${selectedInvoiceIds.length} factures sélectionnées ? Cette action est irréversible.`,
+      async () => {
+        try {
+          await db.invoices.bulkDelete(selectedInvoiceIds);
+          setSelectedInvoiceIds([]);
+          await loadAllData();
+        } catch (err) {
+          console.error(err);
+        }
       }
     );
   };
@@ -944,7 +968,12 @@ export default function App() {
                 <h1>Factures</h1>
                 <p>Historique des prestations de services, facturation et exports PDF.</p>
               </div>
-              <div className="flex-gap-2">
+              <div className="flex-gap-2" style={{ alignItems: 'center' }}>
+                {selectedInvoiceIds.length > 0 && (
+                  <button className="btn btn-danger" onClick={handleDeleteSelectedInvoices}>
+                    <Icons.Delete /> Supprimer ({selectedInvoiceIds.length})
+                  </button>
+                )}
                 <div className="search-container">
                   <span className="search-icon"><Icons.Search /></span>
                   <input 
@@ -972,6 +1001,20 @@ export default function App() {
                   <table className="table-glass">
                     <thead>
                       <tr>
+                        <th style={{ width: '40px' }}>
+                          <input 
+                            type="checkbox"
+                            style={{ transform: 'scale(1.15)', cursor: 'pointer', accentColor: 'var(--color-gold)' }}
+                            checked={filteredInvoices.length > 0 && selectedInvoiceIds.length === filteredInvoices.length}
+                            onChange={(e) => {
+                              if (e.target.checked) {
+                                setSelectedInvoiceIds(filteredInvoices.map(inv => inv.id));
+                              } else {
+                                setSelectedInvoiceIds([]);
+                              }
+                            }}
+                          />
+                        </th>
                         <th>Numéro</th>
                         <th>Date</th>
                         <th>Client</th>
@@ -985,7 +1028,21 @@ export default function App() {
                     </thead>
                     <tbody>
                       {filteredInvoices.map((inv) => (
-                        <tr key={inv.id}>
+                        <tr key={inv.id} className={selectedInvoiceIds.includes(inv.id) ? 'selected-row' : ''}>
+                          <td>
+                            <input 
+                              type="checkbox"
+                              style={{ transform: 'scale(1.15)', cursor: 'pointer', accentColor: 'var(--color-gold)' }}
+                              checked={selectedInvoiceIds.includes(inv.id)}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedInvoiceIds([...selectedInvoiceIds, inv.id]);
+                                } else {
+                                  setSelectedInvoiceIds(selectedInvoiceIds.filter(id => id !== inv.id));
+                                }
+                              }}
+                            />
+                          </td>
                           <td style={{ fontWeight: 700, color: 'var(--color-gold)' }}>{inv.invoiceNumber}</td>
                           <td>{new Date(inv.date).toLocaleDateString('fr-FR')}</td>
                           <td>{inv.companyName}</td>

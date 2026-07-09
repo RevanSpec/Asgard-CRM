@@ -610,3 +610,8 @@ body {
   margin-bottom: 1rem;
   color: var(--color-gold);
 }
+
+.table-glass tr.selected-row td {
+  background-color: rgba(229, 169, 60, 0.04);
+  border-bottom-color: rgba(229, 169, 60, 0.15);
+}
