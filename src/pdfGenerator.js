@@ -1,12 +1,13 @@
 import { jsPDF } from 'jspdf';
 
 /**
- * Generates and downloads a professional invoice PDF.
+ * Generates the jsPDF instance for an invoice.
  * @param {object} invoice - The invoice data
  * @param {object} client - The client data
  * @param {object} businessSettings - The user's company/business settings
+ * @returns {jsPDF} The generated jsPDF document instance
  */
-export function exportInvoiceToPDF(invoice, client, businessSettings) {
+export function generateInvoicePDF(invoice, client, businessSettings) {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -153,7 +154,17 @@ export function exportInvoiceToPDF(invoice, client, businessSettings) {
   doc.setFontSize(7);
   doc.setTextColor(...greyColor);
   doc.text(`Facture générée automatiquement via Asgard CRM le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 267, { align: 'center' });
-  
-  // Download file
+
+  return doc;
+}
+
+/**
+ * Generates and downloads a professional invoice PDF.
+ * @param {object} invoice - The invoice data
+ * @param {object} client - The client data
+ * @param {object} businessSettings - The user's company/business settings
+ */
+export function exportInvoiceToPDF(invoice, client, businessSettings) {
+  const doc = generateInvoicePDF(invoice, client, businessSettings);
   doc.save(`${invoice.invoiceNumber}.pdf`);
 }

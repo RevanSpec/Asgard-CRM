@@ -1,6 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { db, generateInvoiceNumber } from './db';
-import { exportInvoiceToPDF } from './pdfGenerator';
+import { exportInvoiceToPDF, generateInvoicePDF } from './pdfGenerator';
+
+// Electron IPC renderer (safe for web testing too)
+const ipcRenderer = window.require ? window.require('electron').ipcRenderer : null;
 
 // --- INLINE SVG ICONS (Premium Gold Theme) ---
 const Icons = {
@@ -67,6 +70,12 @@ const Icons = {
       <circle cx="11" cy="11" r="8" />
       <line x1="21" y1="21" x2="16.65" y2="16.65" />
     </svg>
+  ),
+  Email: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+      <polyline points="22,6 12,13 2,6" />
+    </svg>
   )
 };
 
@@ -82,7 +91,12 @@ const defaultSettings = {
   urssafServiceBnc: 21.1,
   urssafServiceBic: 21.1,
   urssafVente: 12.3,
-  acreEnabled: false
+  acreEnabled: false,
+  smtpHost: '127.0.0.1',
+  smtpPort: '1025',
+  smtpUser: '',
+  smtpPass: '',
+  smtpSecure: 'none'
 };
 
 // Regex declarations
@@ -105,6 +119,12 @@ export default function App() {
   useEffect(() => {
     setSelectedInvoiceIds([]);
   }, [activeTab]);
+
+  // Email states
+  const [emailModalOpen, setEmailModalOpen] = useState(false);
+  const [emailForm, setEmailForm] = useState({ to: '', subject: '', text: '', invoice: null });
+  const [sendingEmail, setSendingEmail] = useState(false);
+  const [smtpTesting, setSmtpTesting] = useState(false);
 
   // Modals States
   const [clientModalOpen, setClientModalOpen] = useState(false);
@@ -469,6 +489,121 @@ export default function App() {
     );
   };
 
+  const handleOpenSendEmail = async (invoice) => {
+    // Get client email
+    let client = await db.clients.get(invoice.clientId);
+    const toEmail = client ? client.email : '';
+    
+    setEmailForm({
+      to: toEmail,
+      subject: `Facture ${invoice.invoiceNumber} - ${businessSettings.companyName}`,
+      text: `Bonjour,\n\nVeuillez trouver ci-joint la facture ${invoice.invoiceNumber} pour la prestation : ${invoice.description}.\n\nLe montant total net à payer est de ${invoice.amountTotal.toFixed(2)} €.\n\nCordialement,\n\n${businessSettings.contactName}\n${businessSettings.companyName}`,
+      invoice: invoice
+    });
+    
+    setEmailModalOpen(true);
+  };
+
+  const handleSendEmail = async (e) => {
+    e.preventDefault();
+    if (!ipcRenderer) {
+      showAlert("Erreur", "L'envoi d'e-mails n'est disponible que dans la version de bureau de l'application.");
+      return;
+    }
+
+    if (!emailForm.to.trim()) {
+      showAlert("Erreur", "L'adresse e-mail du destinataire est requise.");
+      return;
+    }
+
+    setSendingEmail(true);
+
+    try {
+      const invoice = emailForm.invoice;
+      let client = await db.clients.get(invoice.clientId);
+      if (!client) {
+        client = {
+          companyName: invoice.companyName,
+          contactName: 'Client',
+          email: emailForm.to,
+          phone: '',
+          address: ''
+        };
+      }
+
+      // 1. Generate PDF document and get base64 string
+      const doc = generateInvoicePDF(invoice, client, businessSettings);
+      const pdfDataUri = doc.output('datauristring');
+      const pdfBase64 = pdfDataUri.split(',')[1];
+
+      // 2. Prepare SMTP configuration from settings
+      const smtpConfig = {
+        host: businessSettings.smtpHost,
+        port: businessSettings.smtpPort,
+        user: businessSettings.smtpUser,
+        pass: businessSettings.smtpPass,
+        secure: businessSettings.smtpSecure,
+        from: businessSettings.email
+      };
+
+      // 3. Prepare email data
+      const emailData = {
+        to: emailForm.to,
+        subject: emailForm.subject,
+        text: emailForm.text,
+        filename: `${invoice.invoiceNumber}.pdf`,
+        pdfBase64
+      };
+
+      // 4. Send via IPC
+      const result = await ipcRenderer.invoke('send-email', { smtpConfig, emailData });
+
+      if (result.success) {
+        setEmailModalOpen(false);
+        showAlert("Succès", `La facture a été envoyée avec succès à ${emailForm.to} !`);
+      } else {
+        showAlert("Échec de l'envoi", `Erreur SMTP : ${result.error}`);
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert("Erreur", `Une erreur s'est produite lors de la génération ou de l'envoi du mail : ${err.message}`);
+    } finally {
+      setSendingEmail(false);
+    }
+  };
+
+  const handleTestSMTP = async () => {
+    if (!ipcRenderer) {
+      showAlert("Erreur", "Les fonctions de messagerie ne sont pas disponibles hors d'Electron.");
+      return;
+    }
+
+    setSmtpTesting(true);
+
+    try {
+      const smtpConfig = {
+        host: businessSettings.smtpHost,
+        port: businessSettings.smtpPort,
+        user: businessSettings.smtpUser,
+        pass: businessSettings.smtpPass,
+        secure: businessSettings.smtpSecure
+      };
+
+      const result = await ipcRenderer.invoke('test-smtp', smtpConfig);
+
+      if (result.success) {
+        showAlert("Connexion réussie", "La configuration SMTP est correcte ! Le serveur a validé les identifiants.");
+      } else {
+        showAlert("Échec de la connexion", `Erreur de connexion SMTP : ${result.error}`);
+      }
+    } catch (err) {
+      console.error(err);
+      showAlert("Erreur", `Impossible de tester la connexion : ${err.message}`);
+    } finally {
+      setSmtpTesting(false);
+    }
+  };
+
   const handleExportPDF = async (invoice) => {
     // Find client details (even if client was deleted, we fallback gracefully using the invoice stored metadata)
     let client = await db.clients.get(invoice.clientId);
@@ -825,7 +960,7 @@ export default function App() {
                           <th>Client</th>
                           <th>Montant HT</th>
                           <th>Montant TTC</th>
-                          <th className="text-right">PDF</th>
+                          <th className="text-right">Actions</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -836,13 +971,22 @@ export default function App() {
                             <td>{inv.amountHt.toFixed(2)} €</td>
                             <td>{inv.amountTotal.toFixed(2)} €</td>
                             <td className="text-right">
-                              <button 
-                                className="btn btn-secondary btn-icon-only" 
-                                title="Exporter en PDF"
-                                onClick={() => handleExportPDF(inv)}
-                              >
-                                <Icons.Download />
-                              </button>
+                              <div className="flex-gap-2" style={{ justifyContent: 'flex-end' }}>
+                                <button 
+                                  className="btn btn-secondary btn-icon-only" 
+                                  title="Envoyer par e-mail"
+                                  onClick={() => handleOpenSendEmail(inv)}
+                                >
+                                  <Icons.Email />
+                                </button>
+                                <button 
+                                  className="btn btn-secondary btn-icon-only" 
+                                  title="Exporter en PDF"
+                                  onClick={() => handleExportPDF(inv)}
+                                >
+                                  <Icons.Download />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -1061,6 +1205,14 @@ export default function App() {
                             <div className="flex-gap-2" style={{ justifyContent: 'flex-end' }}>
                               <button 
                                 className="btn btn-primary btn-icon-only" 
+                                title="Envoyer par e-mail"
+                                style={{ background: 'linear-gradient(135deg, var(--color-gold), var(--color-gold-hover))', color: 'var(--bg-primary)' }}
+                                onClick={() => handleOpenSendEmail(inv)}
+                              >
+                                <Icons.Email />
+                              </button>
+                              <button 
+                                className="btn btn-secondary btn-icon-only" 
                                 title="Télécharger le PDF"
                                 onClick={() => handleExportPDF(inv)}
                               >
@@ -1220,6 +1372,79 @@ export default function App() {
                       <span className="metric-subtext">Par défaut 12.3% (Vente marchandises)</span>
                     </div>
                   </div>
+                </div>
+
+                {/* Section : SMTP config */}
+                <div className="settings-section" style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+                  <div className="flex-between" style={{ marginBottom: '1.25rem' }}>
+                    <div className="settings-section-title" style={{ marginBottom: '0' }}>Configuration de messagerie (SMTP)</div>
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary" 
+                      onClick={handleTestSMTP}
+                      disabled={smtpTesting}
+                    >
+                      {smtpTesting ? "Vérification en cours..." : "Tester la connexion SMTP"}
+                    </button>
+                  </div>
+                  
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem', marginBottom: '1rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Hôte SMTP</label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="ex: 127.0.0.1 (Proton Mail Bridge)"
+                        value={businessSettings.smtpHost}
+                        onChange={(e) => saveSettings({ ...businessSettings, smtpHost: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Port SMTP</label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="ex: 1025"
+                        value={businessSettings.smtpPort}
+                        onChange={(e) => saveSettings({ ...businessSettings, smtpPort: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Utilisateur SMTP / Adresse Mail</label>
+                      <input 
+                        type="text" 
+                        className="form-input" 
+                        placeholder="Votre adresse e-mail"
+                        value={businessSettings.smtpUser}
+                        onChange={(e) => saveSettings({ ...businessSettings, smtpUser: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Mot de passe SMTP</label>
+                      <input 
+                        type="password" 
+                        className="form-input" 
+                        placeholder="Mot de passe ou clé générée"
+                        value={businessSettings.smtpPass}
+                        onChange={(e) => saveSettings({ ...businessSettings, smtpPass: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Sécurité Connexion</label>
+                      <select 
+                        className="form-input"
+                        value={businessSettings.smtpSecure}
+                        onChange={(e) => saveSettings({ ...businessSettings, smtpSecure: e.target.value })}
+                      >
+                        <option value="none">Aucune (STARTTLS automatique / Proton Mail Bridge)</option>
+                        <option value="ssl">SSL Strict (Port 465)</option>
+                      </select>
+                    </div>
+                  </div>
+                  
+                  <span className="metric-subtext" style={{ display: 'block', color: 'var(--color-gold)', lineHeight: '1.5' }}>
+                    💡 Pour Proton Mail Bridge, laissez l'Hôte sur <strong>127.0.0.1</strong>, le port sur celui indiqué par votre application Bridge (souvent 1025), et choisissez "Aucune" pour la sécurité.
+                  </span>
                 </div>
               </form>
             </div>
@@ -1426,6 +1651,83 @@ export default function App() {
                 </button>
                 <button type="submit" className="btn btn-primary">
                   Générer & Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: EMAIL SEND --- */}
+      {emailModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content" style={{ maxWidth: '600px' }}>
+            <div className="modal-header">
+              <h2>Envoyer la facture par e-mail</h2>
+              <button 
+                type="button"
+                className="btn btn-secondary btn-icon-only" 
+                style={{ borderRadius: '50%' }}
+                onClick={() => setEmailModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <form onSubmit={handleSendEmail}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Destinataire (E-mail)</label>
+                  <input 
+                    type="email" 
+                    className="form-input"
+                    value={emailForm.to}
+                    onChange={(e) => setEmailForm({ ...emailForm, to: e.target.value })}
+                    required
+                    placeholder="client@entreprise.fr"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Objet du message</label>
+                  <input 
+                    type="text" 
+                    className="form-input"
+                    value={emailForm.subject}
+                    onChange={(e) => setEmailForm({ ...emailForm, subject: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Corps du message</label>
+                  <textarea 
+                    className="form-input"
+                    style={{ minHeight: '180px', resize: 'vertical', fontFamily: 'inherit', lineHeight: '1.5' }}
+                    value={emailForm.text}
+                    onChange={(e) => setEmailForm({ ...emailForm, text: e.target.value })}
+                    required
+                  />
+                </div>
+
+                {/* Attachment Pill */}
+                {emailForm.invoice && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.75rem 1rem', backgroundColor: 'rgba(229, 169, 60, 0.05)', borderRadius: '8px', border: '1px solid rgba(229, 169, 60, 0.15)', fontSize: '0.85rem' }}>
+                    <span style={{ fontSize: '1.15rem' }}>📎</span>
+                    <div style={{ flexGrow: 1 }}>
+                      <div style={{ fontWeight: 600, color: 'var(--color-gold)' }}>{emailForm.invoice.invoiceNumber}.pdf</div>
+                      <div style={{ color: 'var(--text-muted)', fontSize: '0.75rem' }}>Document PDF généré automatiquement et joint au message</div>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setEmailModalOpen(false)} disabled={sendingEmail}>
+                  Annuler
+                </button>
+                <button type="submit" className="btn btn-primary" disabled={sendingEmail} style={{ minWidth: '120px' }}>
+                  {sendingEmail ? "Envoi en cours..." : "Envoyer"}
                 </button>
               </div>
             </form>
