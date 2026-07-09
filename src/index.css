@@ -38,6 +38,12 @@
   scrollbar-color: var(--border-glass) var(--bg-primary);
 }
 
+input, select, textarea, button {
+  -webkit-user-select: text !important;
+  user-select: text !important;
+  pointer-events: auto !important;
+}
+
 /* Scrollbar Customization */
 ::-webkit-scrollbar {
   width: 6px;

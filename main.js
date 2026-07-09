@@ -21,6 +21,12 @@ function createWindow() {
   // Remove the default menu bar
   win.setMenuBarVisibility(false);
 
+  // Focus the window once it is ready to prevent clicks from being ignored
+  win.once('ready-to-show', () => {
+    win.show();
+    win.focus();
+  });
+
   const isDev = !app.isPackaged;
   if (isDev) {
     const loadURLWithRetry = () => {

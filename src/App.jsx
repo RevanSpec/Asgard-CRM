@@ -111,6 +111,19 @@ export default function App() {
   const [invoiceForm, setInvoiceForm] = useState({ clientId: '', serviceType: 'service_bnc', description: '', amountHt: '', tvaRate: '20' });
   const [invoiceFormErrors, setInvoiceFormErrors] = useState({});
 
+  // Custom alert & confirm states
+  const [customAlert, setCustomAlert] = useState({ open: false, title: '', message: '' });
+  const [customConfirm, setCustomConfirm] = useState({ open: false, title: '', message: '', onConfirm: null });
+
+  const showAlert = (title, message) => {
+    setCustomAlert({ open: true, title, message });
+  };
+  const showConfirm = (title, message, onConfirm) => {
+    setCustomConfirm({ open: true, title, message, onConfirm });
+  };
+  const closeAlert = () => setCustomAlert({ ...customAlert, open: false });
+  const closeConfirm = () => setCustomConfirm({ ...customConfirm, open: false });
+
   // Seed database if empty
   const seedDatabase = async () => {
     const clientsCount = await db.clients.count();
@@ -344,17 +357,21 @@ export default function App() {
   };
 
   const handleDeleteClient = async (id) => {
-    if (confirm("Êtes-vous sûr de vouloir supprimer ce client ? Toutes ses factures associées resteront dans l'historique mais déconnectées.")) {
-      await db.clients.delete(id);
-      await loadAllData();
-    }
+    showConfirm(
+      "Supprimer le client",
+      "Êtes-vous sûr de vouloir supprimer ce client ? Toutes ses factures associées resteront dans l'historique mais déconnectées.",
+      async () => {
+        await db.clients.delete(id);
+        await loadAllData();
+      }
+    );
   };
 
   // --- INVOICE ACTIONS ---
 
   const handleOpenAddInvoice = () => {
     if (clients.length === 0) {
-      alert("Veuillez d'abord créer au moins un client avant de générer une facture.");
+      showAlert("Client requis", "Veuillez d'abord créer au moins un client avant de générer une facture.");
       return;
     }
     setInvoiceForm({
@@ -418,10 +435,14 @@ export default function App() {
   };
 
   const handleDeleteInvoice = async (id) => {
-    if (confirm("Êtes-vous sûr de vouloir supprimer cette facture ? Cette action est irréversible.")) {
-      await db.invoices.delete(id);
-      await loadAllData();
-    }
+    showConfirm(
+      "Supprimer la facture",
+      "Êtes-vous sûr de vouloir supprimer cette facture ? Cette action est irréversible.",
+      async () => {
+        await db.invoices.delete(id);
+        await loadAllData();
+      }
+    );
   };
 
   const handleExportPDF = async (invoice) => {
@@ -510,7 +531,7 @@ export default function App() {
     return {
       labels: months,
       values: caPerMonth,
-      maxVal: Math.max(...caPerMonth, 1000) // Avoid divide by zero, min scale 1000
+      maxVal: Math.max(...caPerMonth, 1000) * 1.15 // Avoid divide by zero, min scale 1000, add 15% padding
     };
   };
 
@@ -634,8 +655,8 @@ export default function App() {
               {/* SVG CA Evolution Chart */}
               <div className="card-glass">
                 <h3 style={{ fontFamily: 'var(--font-title)', marginBottom: '1.25rem' }}>Évolution du Chiffre d'Affaires HT ({new Date().getFullYear()})</h3>
-                <div style={{ position: 'relative', width: '100%', height: '240px' }}>
-                  <svg width="100%" height="100%" viewBox="0 0 600 220" preserveAspectRatio="none">
+                <div style={{ position: 'relative', width: '100%', height: '320px' }}>
+                  <svg width="100%" height="100%" viewBox="0 0 600 280" preserveAspectRatio="none">
                     <defs>
                       <linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1">
                         <stop offset="0%" stopColor="var(--color-gold)" stopOpacity="0.3" />
@@ -647,10 +668,10 @@ export default function App() {
                     {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => (
                       <line
                         key={idx}
-                        x1="40"
-                        y1={20 + ratio * 150}
-                        x2="580"
-                        y2={20 + ratio * 150}
+                        x1="30"
+                        y1={30 + ratio * 200}
+                        x2="570"
+                        y2={30 + ratio * 200}
                         className="chart-grid-line"
                       />
                     ))}
@@ -659,7 +680,7 @@ export default function App() {
                     {(() => {
                       const points = monthlyCA.values.map((val, idx) => {
                         const x = 50 + idx * 46;
-                        const y = 170 - (val / monthlyCA.maxVal) * 130;
+                        const y = 230 - (val / monthlyCA.maxVal) * 200;
                         return { x, y };
                       });
 
@@ -668,7 +689,7 @@ export default function App() {
                       );
 
                       const areaD = points.length > 0 
-                        ? `${pathD} L ${points[points.length-1].x} 170 L ${points[0].x} 170 Z` 
+                        ? `${pathD} L ${points[points.length-1].x} 230 L ${points[0].x} 230 Z` 
                         : '';
 
                       return (
@@ -688,7 +709,7 @@ export default function App() {
                               {monthlyCA.values[idx] > 0 && (
                                 <text
                                   x={p.x}
-                                  y={p.y - 10}
+                                  y={p.y - 12}
                                   textAnchor="middle"
                                   fill="var(--text-primary)"
                                   fontSize="9"
@@ -708,7 +729,7 @@ export default function App() {
                       <text
                         key={idx}
                         x={50 + idx * 46}
-                        y="195"
+                        y="255"
                         textAnchor="middle"
                         className="chart-label"
                       >
@@ -1018,7 +1039,7 @@ export default function App() {
             </div>
 
             <div className="card-glass">
-              <form onSubmit={(e) => { e.preventDefault(); alert("Paramètres enregistrés !"); }}>
+              <form onSubmit={(e) => { e.preventDefault(); showAlert("Succès", "Paramètres enregistrés !"); }}>
                 
                 {/* Section : My Info */}
                 <div className="settings-section">
@@ -1351,6 +1372,42 @@ export default function App() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- CUSTOM DIALOGS --- */}
+      {customAlert.open && (
+        <div className="modal-overlay" style={{ zIndex: 110 }}>
+          <div className="modal-content" style={{ maxWidth: '400px' }}>
+            <div className="modal-header">
+              <h2>{customAlert.title}</h2>
+              <button type="button" className="btn btn-secondary btn-icon-only" style={{ borderRadius: '50%' }} onClick={closeAlert}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{customAlert.message}</p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-primary" onClick={closeAlert}>OK</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {customConfirm.open && (
+        <div className="modal-overlay" style={{ zIndex: 110 }}>
+          <div className="modal-content" style={{ maxWidth: '450px' }}>
+            <div className="modal-header">
+              <h2>{customConfirm.title}</h2>
+              <button type="button" className="btn btn-secondary btn-icon-only" style={{ borderRadius: '50%' }} onClick={closeConfirm}>✕</button>
+            </div>
+            <div className="modal-body">
+              <p style={{ fontSize: '0.95rem', color: 'var(--text-secondary)', lineHeight: '1.5' }}>{customConfirm.message}</p>
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-secondary" onClick={closeConfirm}>Annuler</button>
+              <button type="button" className="btn btn-danger" onClick={() => { customConfirm.onConfirm(); closeConfirm(); }}>Confirmer</button>
+            </div>
           </div>
         </div>
       )}
