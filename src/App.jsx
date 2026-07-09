@@ -76,6 +76,28 @@ const Icons = {
       <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
       <polyline points="22,6 12,13 2,6" />
     </svg>
+  ),
+  Estimates: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2" />
+      <rect x="8" y="2" width="8" height="4" rx="1" ry="1" />
+      <path d="M9 14h6" />
+      <path d="M9 18h6" />
+      <path d="M9 10h6" />
+    </svg>
+  ),
+  Expenses: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="1" y="4" width="22" height="16" rx="2" ry="2" />
+      <line x1="1" y1="10" x2="23" y2="10" />
+    </svg>
+  ),
+  Accounting: () => (
+    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <line x1="18" y1="20" x2="18" y2="10" />
+      <line x1="12" y1="20" x2="12" y2="4" />
+      <line x1="6" y1="20" x2="6" y2="14" />
+    </svg>
   )
 };
 
@@ -122,9 +144,34 @@ export default function App() {
 
   // Email states
   const [emailModalOpen, setEmailModalOpen] = useState(false);
-  const [emailForm, setEmailForm] = useState({ to: '', subject: '', text: '', invoice: null });
+  const [emailForm, setEmailForm] = useState({ to: '', subject: '', text: '', invoice: null, type: 'invoice' });
   const [sendingEmail, setSendingEmail] = useState(false);
   const [smtpTesting, setSmtpTesting] = useState(false);
+
+  // Estimates, Expenses and Compta States
+  const [estimates, setEstimates] = useState([]);
+  const [expenses, setExpenses] = useState([]);
+  
+  const [estimatesSearch, setEstimatesSearch] = useState('');
+  const [expensesSearch, setExpensesSearch] = useState('');
+  
+  const [estimateModalOpen, setEstimateModalOpen] = useState(false);
+  const [expenseModalOpen, setExpenseModalOpen] = useState(false);
+  const [paymentModalOpen, setPaymentModalOpen] = useState(false);
+  
+  const [estimateForm, setEstimateForm] = useState({ id: null, clientId: '', serviceType: 'service_bnc', description: '', amountHt: '', tvaRate: '20', status: 'brouillon', date: new Date().toISOString().split('T')[0] });
+  const [estimateFormErrors, setEstimateFormErrors] = useState({});
+  
+  const [expenseForm, setExpenseForm] = useState({ id: null, merchant: '', category: 'Logiciels', amount: '', description: '', paymentMethod: 'carte', date: new Date().toISOString().split('T')[0] });
+  const [expenseFormErrors, setExpenseFormErrors] = useState({});
+  
+  const [paymentForm, setPaymentForm] = useState({ invoiceId: null, invoiceNumber: '', paymentDate: new Date().toISOString().split('T')[0], paymentMethod: 'virement' });
+  
+  const [periodType, setPeriodType] = useState('monthly');
+  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth() + 1); // 1-12
+  const [selectedQuarter, setSelectedQuarter] = useState(Math.floor(new Date().getMonth() / 3) + 1); // 1-4
+  const [comptaActiveTab, setComptaActiveTab] = useState('recettes');
 
   // Modals States
   const [clientModalOpen, setClientModalOpen] = useState(false);
@@ -192,7 +239,10 @@ export default function App() {
           tvaRate: 20,
           amountTva: 1200,
           amountTotal: 7200,
-          date: new Date('2026-02-05').toISOString()
+          date: new Date('2026-02-05').toISOString(),
+          status: 'payee',
+          paymentDate: new Date('2026-02-05').toISOString(),
+          paymentMethod: 'virement'
         },
         {
           clientId: wayneId,
@@ -204,7 +254,10 @@ export default function App() {
           tvaRate: 20,
           amountTva: 2500,
           amountTotal: 15000,
-          date: new Date('2026-03-12').toISOString()
+          date: new Date('2026-03-12').toISOString(),
+          status: 'payee',
+          paymentDate: new Date('2026-03-12').toISOString(),
+          paymentMethod: 'virement'
         },
         {
           clientId: asgardId,
@@ -216,7 +269,10 @@ export default function App() {
           tvaRate: 5.5,
           amountTva: 77,
           amountTotal: 1477,
-          date: new Date('2026-04-18').toISOString()
+          date: new Date('2026-04-18').toISOString(),
+          status: 'payee',
+          paymentDate: new Date('2026-04-18').toISOString(),
+          paymentMethod: 'virement'
         },
         {
           clientId: starkId,
@@ -228,7 +284,10 @@ export default function App() {
           tvaRate: 20,
           amountTva: 900,
           amountTotal: 5400,
-          date: new Date('2026-05-02').toISOString()
+          date: new Date('2026-05-02').toISOString(),
+          status: 'payee',
+          paymentDate: new Date('2026-05-02').toISOString(),
+          paymentMethod: 'virement'
         },
         {
           clientId: wayneId,
@@ -240,7 +299,10 @@ export default function App() {
           tvaRate: 20,
           amountTva: 1800,
           amountTotal: 10800,
-          date: new Date('2026-06-25').toISOString()
+          date: new Date('2026-06-25').toISOString(),
+          status: 'payee',
+          paymentDate: new Date('2026-06-25').toISOString(),
+          paymentMethod: 'virement'
         },
         {
           clientId: asgardId,
@@ -252,13 +314,68 @@ export default function App() {
           tvaRate: 20,
           amountTva: 560,
           amountTotal: 3360,
-          date: new Date('2026-07-01').toISOString()
+          date: new Date('2026-07-01').toISOString(),
+          status: 'envoyee'
         }
       ];
 
       for (const inv of invoicesSeed) {
         await db.invoices.add(inv);
       }
+
+      // Seed Estimates
+      await db.estimates.add({
+        clientId: starkId,
+        companyName: 'Stark Industries',
+        estimateNumber: 'DEV-STARK-2026-0001',
+        serviceType: 'service_bnc',
+        description: 'Déploiement infrastructure IA Jarvis',
+        amountHt: 8000,
+        tvaRate: 20,
+        amountTva: 1600,
+        amountTotal: 9600,
+        date: new Date('2026-06-10').toISOString(),
+        status: 'accepte'
+      });
+      await db.estimates.add({
+        clientId: wayneId,
+        companyName: 'Wayne Enterprises',
+        estimateNumber: 'DEV-WAYNE-2026-0002',
+        serviceType: 'service_bic',
+        description: 'Maintenance des capteurs sonar',
+        amountHt: 3500,
+        tvaRate: 20,
+        amountTva: 700,
+        amountTotal: 4200,
+        date: new Date('2026-07-02').toISOString(),
+        status: 'brouillon'
+      });
+
+      // Seed Expenses
+      await db.expenses.add({
+        date: new Date('2026-02-10').toISOString(),
+        merchant: 'OVHcloud',
+        category: 'Logiciels',
+        amount: 49.99,
+        description: 'Hébergement VPS Asgard CRM',
+        paymentMethod: 'carte'
+      });
+      await db.expenses.add({
+        date: new Date('2026-03-01').toISOString(),
+        merchant: 'Adobe Creative Cloud',
+        category: 'Logiciels',
+        amount: 35.99,
+        description: 'Abonnement Photoshop/Illustrator',
+        paymentMethod: 'carte'
+      });
+      await db.expenses.add({
+        date: new Date('2026-04-05').toISOString(),
+        merchant: 'SNCF',
+        category: 'Déplacements',
+        amount: 120.00,
+        description: 'Trajet Paris-Lyon rendez-vous client',
+        paymentMethod: 'carte'
+      });
     }
   };
 
@@ -266,11 +383,17 @@ export default function App() {
   const loadAllData = async () => {
     const clientsList = await db.clients.toArray();
     const invoicesList = await db.invoices.toArray();
+    const estimatesList = await db.estimates.toArray();
+    const expensesList = await db.expenses.toArray();
     
     // Sort clients by name
     setClients(clientsList.sort((a, b) => a.companyName.localeCompare(b.companyName)));
     // Sort invoices by date descending
     setInvoices(invoicesList.sort((a, b) => new Date(b.date) - new Date(a.date)));
+    // Sort estimates by date descending
+    setEstimates(estimatesList.sort((a, b) => new Date(b.date) - new Date(a.date)));
+    // Sort expenses by date descending
+    setExpenses(expensesList.sort((a, b) => new Date(b.date) - new Date(a.date)));
   };
 
   // Load Settings from LocalStorage
@@ -489,16 +612,20 @@ export default function App() {
     );
   };
 
-  const handleOpenSendEmail = async (invoice) => {
+  const handleOpenSendEmail = async (invoice, type = 'invoice') => {
     // Get client email
     let client = await db.clients.get(invoice.clientId);
     const toEmail = client ? client.email : '';
+    const isInvoice = type === 'invoice';
+    const num = isInvoice ? invoice.invoiceNumber : invoice.estimateNumber;
+    const docName = isInvoice ? 'la facture' : 'le devis';
     
     setEmailForm({
       to: toEmail,
-      subject: `Facture ${invoice.invoiceNumber} - ${businessSettings.companyName}`,
-      text: `Bonjour,\n\nVeuillez trouver ci-joint la facture ${invoice.invoiceNumber} pour la prestation : ${invoice.description}.\n\nLe montant total net à payer est de ${invoice.amountTotal.toFixed(2)} €.\n\nCordialement,\n\n${businessSettings.contactName}\n${businessSettings.companyName}`,
-      invoice: invoice
+      subject: `${isInvoice ? 'Facture' : 'Devis'} ${num} - ${businessSettings.companyName}`,
+      text: `Bonjour,\n\nVeuillez trouver ci-joint ${docName} ${num} pour la prestation : ${invoice.description}.\n\nLe montant total est de ${invoice.amountTotal.toFixed(2)} €.\n\nCordialement,\n\n${businessSettings.contactName}\n${businessSettings.companyName}`,
+      invoice: invoice,
+      type: type
     });
     
     setEmailModalOpen(true);
@@ -520,6 +647,7 @@ export default function App() {
 
     try {
       const invoice = emailForm.invoice;
+      const isInvoice = emailForm.type === 'invoice';
       let client = await db.clients.get(invoice.clientId);
       if (!client) {
         client = {
@@ -532,7 +660,9 @@ export default function App() {
       }
 
       // 1. Generate PDF document and get base64 string
-      const doc = generateInvoicePDF(invoice, client, businessSettings);
+      const doc = isInvoice 
+        ? generateInvoicePDF(invoice, client, businessSettings)
+        : generateEstimatePDF(invoice, client, businessSettings);
       const pdfDataUri = doc.output('datauristring');
       const pdfBase64 = pdfDataUri.split(',')[1];
 
@@ -547,11 +677,12 @@ export default function App() {
       };
 
       // 3. Prepare email data
+      const docNum = isInvoice ? invoice.invoiceNumber : invoice.estimateNumber;
       const emailData = {
         to: emailForm.to,
         subject: emailForm.subject,
         text: emailForm.text,
-        filename: `${invoice.invoiceNumber}.pdf`,
+        filename: `${docNum}.pdf`,
         pdfBase64
       };
 
@@ -619,21 +750,311 @@ export default function App() {
     exportInvoiceToPDF(invoice, client, businessSettings);
   };
 
+  // --- ESTIMATES HANDLERS ---
+  const handleCreateEstimateClick = () => {
+    if (clients.length === 0) {
+      showAlert("Client requis", "Veuillez d'abord créer au moins un client avant de générer un devis.");
+      return;
+    }
+    setEstimateForm({
+      id: null,
+      clientId: clients[0].id.toString(),
+      serviceType: 'service_bnc',
+      description: '',
+      amountHt: '',
+      tvaRate: '20',
+      status: 'brouillon',
+      date: new Date().toISOString().split('T')[0]
+    });
+    setEstimateFormErrors({});
+    setEstimateModalOpen(true);
+  };
+
+  const handleEditEstimateClick = (est) => {
+    setEstimateForm({
+      id: est.id,
+      clientId: est.clientId.toString(),
+      serviceType: est.serviceType,
+      description: est.description,
+      amountHt: est.amountHt.toString(),
+      tvaRate: est.tvaRate.toString(),
+      status: est.status,
+      date: new Date(est.date).toISOString().split('T')[0]
+    });
+    setEstimateFormErrors({});
+    setEstimateModalOpen(true);
+  };
+
+  const validateEstimateForm = () => {
+    const errors = {};
+    if (!estimateForm.clientId) errors.clientId = "Client requis";
+    if (!estimateForm.description.trim()) errors.description = "Description requise";
+    const htVal = parseFloat(estimateForm.amountHt);
+    if (!estimateForm.amountHt || isNaN(htVal) || htVal <= 0) {
+      errors.amountHt = "Montant HT valide requis (> 0)";
+    }
+    setEstimateFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSaveEstimate = async (e) => {
+    e.preventDefault();
+    if (!validateEstimateForm()) return;
+
+    const selectedClient = clients.find(c => c.id === parseInt(estimateForm.clientId));
+    const amountHt = parseFloat(estimateForm.amountHt);
+    const tvaRate = parseFloat(estimateForm.tvaRate);
+    const amountTva = (amountHt * tvaRate) / 100;
+    const amountTotal = amountHt + amountTva;
+    const date = new Date(estimateForm.date).toISOString();
+
+    try {
+      if (estimateForm.id) {
+        // Update
+        await db.estimates.update(estimateForm.id, {
+          clientId: selectedClient.id,
+          companyName: selectedClient.companyName,
+          serviceType: estimateForm.serviceType,
+          description: estimateForm.description,
+          amountHt,
+          tvaRate,
+          amountTva,
+          amountTotal,
+          date,
+          status: estimateForm.status
+        });
+      } else {
+        // Add new
+        const estimateNumber = await generateEstimateNumber(selectedClient.companyName, date);
+        await db.estimates.add({
+          clientId: selectedClient.id,
+          companyName: selectedClient.companyName,
+          estimateNumber,
+          serviceType: estimateForm.serviceType,
+          description: estimateForm.description,
+          amountHt,
+          tvaRate,
+          amountTva,
+          amountTotal,
+          date,
+          status: 'brouillon'
+        });
+      }
+
+      setEstimateModalOpen(false);
+      await loadAllData();
+      showAlert("Succès", "Devis enregistré avec succès !");
+    } catch (err) {
+      console.error(err);
+      showAlert("Erreur", `Erreur d'enregistrement : ${err.message}`);
+    }
+  };
+
+  const handleDeleteEstimate = async (id) => {
+    showConfirm(
+      "Supprimer le devis",
+      "Êtes-vous sûr de vouloir supprimer ce devis ? Cette action est irréversible.",
+      async () => {
+        await db.estimates.delete(id);
+        await loadAllData();
+      }
+    );
+  };
+
+  const handleExportEstimatePDF = async (est) => {
+    let client = await db.clients.get(est.clientId);
+    if (!client) {
+      client = { companyName: est.companyName, contactName: 'Client', email: 'N/A', phone: 'N/A', address: 'N/A' };
+    }
+    exportEstimateToPDF(est, client, businessSettings);
+  };
+
+  const handleConvertEstimateToInvoice = async (est) => {
+    showConfirm(
+      "Convertir en facture",
+      `Voulez-vous convertir le devis ${est.estimateNumber} en facture ? Un nouveau numéro de facture sera généré automatiquement.`,
+      async () => {
+        try {
+          const date = new Date().toISOString();
+          const invoiceNumber = await generateInvoiceNumber(est.companyName, date);
+          
+          await db.invoices.add({
+            clientId: est.clientId,
+            companyName: est.companyName,
+            invoiceNumber,
+            serviceType: est.serviceType,
+            description: est.description,
+            amountHt: est.amountHt,
+            tvaRate: est.tvaRate,
+            amountTva: est.amountTva,
+            amountTotal: est.amountTotal,
+            date,
+            status: 'brouillon'
+          });
+
+          // Mark estimate as accepted
+          await db.estimates.update(est.id, { status: 'accepte' });
+
+          await loadAllData();
+          setActiveTab('invoices');
+          showAlert("Conversion réussie !", `Le devis a été converti en facture ${invoiceNumber} et enregistré en brouillon.`);
+        } catch (err) {
+          console.error(err);
+          showAlert("Erreur", `Erreur lors de la conversion : ${err.message}`);
+        }
+      }
+    );
+  };
+
+  // --- EXPENSES HANDLERS ---
+  const handleCreateExpenseClick = () => {
+    setExpenseForm({
+      id: null,
+      merchant: '',
+      category: 'Logiciels',
+      amount: '',
+      description: '',
+      paymentMethod: 'carte',
+      date: new Date().toISOString().split('T')[0]
+    });
+    setExpenseFormErrors({});
+    setExpenseModalOpen(true);
+  };
+
+  const handleEditExpenseClick = (exp) => {
+    setExpenseForm({
+      id: exp.id,
+      merchant: exp.merchant,
+      category: exp.category,
+      amount: exp.amount.toString(),
+      description: exp.description || '',
+      paymentMethod: exp.paymentMethod || 'carte',
+      date: new Date(exp.date).toISOString().split('T')[0]
+    });
+    setExpenseFormErrors({});
+    setExpenseModalOpen(true);
+  };
+
+  const validateExpenseForm = () => {
+    const errors = {};
+    if (!expenseForm.merchant.trim()) errors.merchant = "Fournisseur requis";
+    const amt = parseFloat(expenseForm.amount);
+    if (!expenseForm.amount || isNaN(amt) || amt <= 0) {
+      errors.amount = "Montant supérieur à 0 requis";
+    }
+    setExpenseFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const handleSaveExpense = async (e) => {
+    e.preventDefault();
+    if (!validateExpenseForm()) return;
+
+    const amount = parseFloat(expenseForm.amount);
+    const date = new Date(expenseForm.date).toISOString();
+
+    try {
+      if (expenseForm.id) {
+        await db.expenses.update(expenseForm.id, {
+          merchant: expenseForm.merchant,
+          category: expenseForm.category,
+          amount,
+          description: expenseForm.description,
+          paymentMethod: expenseForm.paymentMethod,
+          date
+        });
+      } else {
+        await db.expenses.add({
+          merchant: expenseForm.merchant,
+          category: expenseForm.category,
+          amount,
+          description: expenseForm.description,
+          paymentMethod: expenseForm.paymentMethod,
+          date
+        });
+      }
+      setExpenseModalOpen(false);
+      await loadAllData();
+      showAlert("Succès", "Dépense enregistrée !");
+    } catch (err) {
+      console.error(err);
+      showAlert("Erreur", `Erreur d'enregistrement : ${err.message}`);
+    }
+  };
+
+  const handleDeleteExpense = async (id) => {
+    showConfirm(
+      "Supprimer la dépense",
+      "Êtes-vous sûr de vouloir supprimer cette dépense ?",
+      async () => {
+        await db.expenses.delete(id);
+        await loadAllData();
+      }
+    );
+  };
+
+  // --- PAYMENTS HANDLERS ---
+  const handleOpenPaymentModal = (invoice) => {
+    setPaymentForm({
+      invoiceId: invoice.id,
+      invoiceNumber: invoice.invoiceNumber,
+      paymentDate: new Date().toISOString().split('T')[0],
+      paymentMethod: 'virement'
+    });
+    setPaymentModalOpen(true);
+  };
+
+  const handleSavePayment = async (e) => {
+    e.preventDefault();
+    try {
+      await db.invoices.update(paymentForm.invoiceId, {
+        status: 'payee',
+        paymentDate: new Date(paymentForm.paymentDate).toISOString(),
+        paymentMethod: paymentForm.paymentMethod
+      });
+      setPaymentModalOpen(false);
+      await loadAllData();
+      showAlert("Succès", `Facture ${paymentForm.invoiceNumber} marquée comme payée.`);
+    } catch (err) {
+      console.error(err);
+      showAlert("Erreur", `Impossible d'enregistrer le règlement : ${err.message}`);
+    }
+  };
+
+  const handleMarkInvoiceAsSent = async (id) => {
+    try {
+      await db.invoices.update(id, { status: 'envoyee' });
+      await loadAllData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
   // --- CALCULATION HELPERS FOR DASHBOARD ---
 
   const calculateCA = () => {
-    let ht = 0;
-    let ttc = 0;
+    let htFacture = 0;
+    let ttcFacture = 0;
+    let htEncaisse = 0;
+    let ttcEncaisse = 0;
     invoices.forEach(inv => {
-      ht += inv.amountHt;
-      ttc += inv.amountTotal;
+      if (inv.status !== 'brouillon') {
+        htFacture += inv.amountHt;
+        ttcFacture += inv.amountTotal;
+      }
+      if (inv.status === 'payee') {
+        htEncaisse += inv.amountHt;
+        ttcEncaisse += inv.amountTotal;
+      }
     });
-    return { ht, ttc };
+    return { ht: htEncaisse, ttc: ttcEncaisse, htFacture, ttcFacture };
   };
 
   const calculateUrssafCharges = () => {
     let charges = 0;
     invoices.forEach(inv => {
+      if (inv.status !== 'payee') return; // Only pay charges on encashed CA
+      
       let rate = 0;
       if (inv.serviceType === 'service_bnc') {
         rate = businessSettings.urssafServiceBnc;
@@ -653,11 +1074,16 @@ export default function App() {
     return charges;
   };
 
+  const calculateTotalExpenses = () => {
+    return expenses.reduce((sum, exp) => sum + exp.amount, 0);
+  };
+
   const getServiceTypeBreakdown = () => {
     let bnc = 0;
     let bic = 0;
     let vente = 0;
     invoices.forEach(inv => {
+      if (inv.status !== 'payee') return; // Only encashed CA
       if (inv.serviceType === 'service_bnc') bnc += inv.amountHt;
       else if (inv.serviceType === 'service_bic') bic += inv.amountHt;
       else if (inv.serviceType === 'vente') vente += inv.amountHt;
@@ -680,6 +1106,7 @@ export default function App() {
     const caPerMonth = Array(12).fill(0);
     
     invoices.forEach(inv => {
+      if (inv.status === 'brouillon') return;
       const invDate = new Date(inv.date);
       if (invDate.getFullYear() === currentYear) {
         const monthIndex = invDate.getMonth();
@@ -694,10 +1121,74 @@ export default function App() {
     };
   };
 
-  const { ht: totalCaHt, ttc: totalCaTtc } = calculateCA();
+  const { ht: totalCaHt, ttc: totalCaTtc, htFacture, ttcFacture } = calculateCA();
   const totalUrssaf = calculateUrssafCharges();
+  const totalExpenses = calculateTotalExpenses();
+  const netProfit = totalCaHt - totalUrssaf - totalExpenses;
   const breakdown = getServiceTypeBreakdown();
   const monthlyCA = getMonthlyCAData();
+
+  // Calculate annual CA by category for current year to check thresholds
+  const currentYearForThresholds = new Date().getFullYear();
+  let annualServiceCa = 0;
+  let annualVenteCa = 0;
+  invoices.forEach(inv => {
+    if (inv.status !== 'payee') return;
+    const paymentDate = new Date(inv.paymentDate || inv.date);
+    if (paymentDate.getFullYear() === currentYearForThresholds) {
+      if (inv.serviceType === 'vente') {
+        annualVenteCa += inv.amountHt;
+      } else {
+        annualServiceCa += inv.amountHt;
+      }
+    }
+  });
+
+  const caAlerts = [];
+  if (annualServiceCa > 34000) {
+    if (annualServiceCa > 39100) {
+      caAlerts.push({
+        type: 'danger',
+        title: 'Seuil de TVA Services Dépassé',
+        message: `Votre CA annuel de services (${annualServiceCa.toLocaleString('fr-FR')} €) a dépassé la limite de tolérance de la franchise en base de TVA (39 100 €). Vous devez facturer de la TVA.`
+      });
+    } else {
+      caAlerts.push({
+        type: 'warning',
+        title: 'Seuil de TVA Services Proche',
+        message: `Votre CA annuel de services (${annualServiceCa.toLocaleString('fr-FR')} €) approche le seuil de la franchise en base de TVA (36 800 € / limite de tolérance : 39 100 €).`
+      });
+    }
+  }
+  if (annualServiceCa > 70000) {
+    caAlerts.push({
+      type: 'warning',
+      title: 'Plafond Micro-Entreprise Services Proche',
+      message: `Votre CA annuel de services (${annualServiceCa.toLocaleString('fr-FR')} €) approche le plafond de la micro-entreprise (77 700 €).`
+    });
+  }
+  if (annualVenteCa > 85000) {
+    if (annualVenteCa > 101000) {
+      caAlerts.push({
+        type: 'danger',
+        title: 'Seuil de TVA Ventes Dépassé',
+        message: `Votre CA annuel de ventes (${annualVenteCa.toLocaleString('fr-FR')} €) a dépassé la limite de tolérance de la franchise en base de TVA (101 000 €). Vous devez facturer de la TVA.`
+      });
+    } else {
+      caAlerts.push({
+        type: 'warning',
+        title: 'Seuil de TVA Ventes Proche',
+        message: `Votre CA annuel de ventes (${annualVenteCa.toLocaleString('fr-FR')} €) approche le seuil de la franchise en base de TVA (91 900 € / limite de tolérance : 101 000 €).`
+      });
+    }
+  }
+  if (annualVenteCa > 170000) {
+    caAlerts.push({
+      type: 'warning',
+      title: 'Plafond Micro-Entreprise Ventes Proche',
+      message: `Votre CA annuel de ventes (${annualVenteCa.toLocaleString('fr-FR')} €) approche le plafond de la micro-entreprise (188 700 €).`
+    });
+  }
 
   // Filter lists
   const filteredClients = clients.filter(c => 
@@ -744,11 +1235,32 @@ export default function App() {
             <span>Clients</span>
           </li>
           <li 
+            className={`nav-item ${activeTab === 'estimates' ? 'active' : ''}`}
+            onClick={() => setActiveTab('estimates')}
+          >
+            <Icons.Estimates />
+            <span>Devis</span>
+          </li>
+          <li 
             className={`nav-item ${activeTab === 'invoices' ? 'active' : ''}`}
             onClick={() => setActiveTab('invoices')}
           >
             <Icons.Invoices />
             <span>Factures</span>
+          </li>
+          <li 
+            className={`nav-item ${activeTab === 'expenses' ? 'active' : ''}`}
+            onClick={() => setActiveTab('expenses')}
+          >
+            <Icons.Expenses />
+            <span>Dépenses</span>
+          </li>
+          <li 
+            className={`nav-item ${activeTab === 'compta' ? 'active' : ''}`}
+            onClick={() => setActiveTab('compta')}
+          >
+            <Icons.Accounting />
+            <span>Comptabilité</span>
           </li>
           <li 
             className={`nav-item ${activeTab === 'settings' ? 'active' : ''}`}
@@ -783,29 +1295,59 @@ export default function App() {
               </div>
             </div>
 
+            {/* Alerts */}
+            {caAlerts.length > 0 && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginBottom: '1.5rem' }}>
+                {caAlerts.map((alert, index) => (
+                  <div 
+                    key={index} 
+                    className="card-glass"
+                    style={{ 
+                      padding: '1rem 1.25rem', 
+                      borderColor: alert.type === 'danger' ? 'rgba(239, 68, 68, 0.4)' : 'rgba(229, 169, 60, 0.4)',
+                      background: alert.type === 'danger' ? 'rgba(239, 68, 68, 0.05)' : 'rgba(229, 169, 60, 0.03)',
+                      display: 'flex',
+                      alignItems: 'flex-start',
+                      gap: '0.75rem'
+                    }}
+                  >
+                    <span style={{ fontSize: '1.25rem' }}>{alert.type === 'danger' ? '🚨' : '⚠️'}</span>
+                    <div>
+                      <h4 style={{ margin: 0, fontWeight: 700, color: alert.type === 'danger' ? '#EF4444' : 'var(--color-gold)', fontSize: '0.95rem' }}>
+                        {alert.title}
+                      </h4>
+                      <p style={{ margin: '0.25rem 0 0 0', fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.4' }}>
+                        {alert.message}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Metric Grid */}
             <div className="dashboard-grid">
               <div className="card-glass">
-                <div className="metric-label">CA Global (HT)</div>
+                <div className="metric-label">CA HT Encaissé</div>
                 <div className="metric-value metric-highlight">{totalCaHt.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €</div>
-                <div className="metric-subtext">Total net hors taxes encaissé</div>
+                <div className="metric-subtext">Facturé : {htFacture.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} € HT (TTC : {totalCaTtc.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €)</div>
               </div>
-              <div className="card-glass">
-                <div className="metric-label">CA Global (TTC)</div>
-                <div className="metric-value">{totalCaTtc.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €</div>
-                <div className="metric-subtext">Total avec taxe sur la valeur ajoutée</div>
+              <div className="card-glass" style={{ borderColor: 'rgba(239, 68, 68, 0.2)' }}>
+                <div className="metric-label">Dépenses Totales</div>
+                <div className="metric-value" style={{ color: '#EF4444' }}>{totalExpenses.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €</div>
+                <div className="metric-subtext">Achats et frais professionnels enregistrés</div>
               </div>
-              <div className="card-glass" style={{ borderColor: 'rgba(244, 63, 94, 0.3)' }}>
+              <div className="card-glass" style={{ borderColor: 'rgba(244, 63, 94, 0.2)' }}>
                 <div className="metric-label">Charges URSSAF</div>
                 <div className="metric-value" style={{ color: '#FF6B8B' }}>{totalUrssaf.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €</div>
                 <div className="metric-subtext">
-                  Estimées à {businessSettings.acreEnabled ? 'taux réduit ACRE' : 'taux plein'}
+                  Sur encaissé • {businessSettings.acreEnabled ? 'Taux ACRE (-50%)' : 'Taux plein'}
                 </div>
               </div>
-              <div className="card-glass" style={{ borderColor: 'rgba(56, 189, 248, 0.3)' }}>
-                <div className="metric-label">Reste Après Charges</div>
-                <div className="metric-value" style={{ color: 'var(--color-blue)' }}>{(totalCaHt - totalUrssaf).toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €</div>
-                <div className="metric-subtext">Trésorerie nette après cotisations</div>
+              <div className="card-glass" style={{ borderColor: 'rgba(16, 185, 129, 0.3)' }}>
+                <div className="metric-label">Bénéfice Net Réel</div>
+                <div className="metric-value" style={{ color: '#10B981' }}>{netProfit.toLocaleString('fr-FR', { minimumFractionDigits: 2 })} €</div>
+                <div className="metric-subtext">Trésorerie réelle après charges et dépenses</div>
               </div>
             </div>
 
@@ -958,7 +1500,7 @@ export default function App() {
                         <tr>
                           <th>Numéro</th>
                           <th>Client</th>
-                          <th>Montant HT</th>
+                          <th>Statut</th>
                           <th>Montant TTC</th>
                           <th className="text-right">Actions</th>
                         </tr>
@@ -968,14 +1510,28 @@ export default function App() {
                           <tr key={inv.id}>
                             <td style={{ fontWeight: 600, color: 'var(--color-gold)' }}>{inv.invoiceNumber}</td>
                             <td>{inv.companyName}</td>
-                            <td>{inv.amountHt.toFixed(2)} €</td>
-                            <td>{inv.amountTotal.toFixed(2)} €</td>
+                            <td>
+                              {inv.status === 'brouillon' && <span className="badge badge-secondary">Brouillon</span>}
+                              {inv.status === 'envoye' && <span className="badge badge-blue">Envoyée</span>}
+                              {inv.status === 'payee' && <span className="badge badge-success">Payée</span>}
+                            </td>
+                            <td style={{ fontWeight: 600 }}>{inv.amountTotal.toFixed(2)} €</td>
                             <td className="text-right">
                               <div className="flex-gap-2" style={{ justifyContent: 'flex-end' }}>
+                                {inv.status !== 'payee' && (
+                                  <button 
+                                    className="btn btn-secondary"
+                                    style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', border: '1px solid var(--color-gold)', color: 'var(--color-gold)' }}
+                                    title="Enregistrer le règlement"
+                                    onClick={() => handleOpenPaymentModal(inv)}
+                                  >
+                                    Régler
+                                  </button>
+                                )}
                                 <button 
                                   className="btn btn-secondary btn-icon-only" 
                                   title="Envoyer par e-mail"
-                                  onClick={() => handleOpenSendEmail(inv)}
+                                  onClick={() => handleOpenSendEmail(inv, 'invoice')}
                                 >
                                   <Icons.Email />
                                 </button>
@@ -1163,7 +1719,7 @@ export default function App() {
                         <th>Date</th>
                         <th>Client</th>
                         <th>Type</th>
-                        <th>Description</th>
+                        <th>Statut</th>
                         <th>Montant HT</th>
                         <th>TVA</th>
                         <th>Montant TTC</th>
@@ -1191,23 +1747,38 @@ export default function App() {
                           <td>{new Date(inv.date).toLocaleDateString('fr-FR')}</td>
                           <td>{inv.companyName}</td>
                           <td>
-                            {inv.serviceType === 'service_bnc' && <span className="badge badge-blue">Service BNC</span>}
-                            {inv.serviceType === 'service_bic' && <span className="badge badge-blue">Service BIC</span>}
-                            {inv.serviceType === 'vente' && <span className="badge badge-success">Vente (BIC)</span>}
+                            {inv.serviceType === 'service_bnc' && <span className="badge badge-blue">BNC</span>}
+                            {inv.serviceType === 'service_bic' && <span className="badge badge-blue">BIC</span>}
+                            {inv.serviceType === 'vente' && <span className="badge badge-success">Vente</span>}
                           </td>
-                          <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={inv.description}>
-                            {inv.description}
+                          <td>
+                            {inv.status === 'brouillon' && <span className="badge badge-secondary">Brouillon</span>}
+                            {inv.status === 'envoye' && <span className="badge badge-blue">Envoyée</span>}
+                            {inv.status === 'payee' && (
+                              <span className="badge badge-success" title={`Payée le ${new Date(inv.paymentDate || inv.date).toLocaleDateString('fr-FR')} par ${inv.paymentMethod || 'Virement'}`}>
+                                Payée
+                              </span>
+                            )}
                           </td>
                           <td>{inv.amountHt.toFixed(2)} €</td>
                           <td>{inv.tvaRate}%</td>
                           <td style={{ fontWeight: 600 }}>{inv.amountTotal.toFixed(2)} €</td>
                           <td className="text-right">
                             <div className="flex-gap-2" style={{ justifyContent: 'flex-end' }}>
+                              {inv.status !== 'payee' && (
+                                <button 
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', border: '1px solid var(--color-gold)', color: 'var(--color-gold)' }}
+                                  title="Enregistrer le règlement"
+                                  onClick={() => handleOpenPaymentModal(inv)}
+                                >
+                                  Régler
+                                </button>
+                              )}
                               <button 
-                                className="btn btn-primary btn-icon-only" 
+                                className="btn btn-secondary btn-icon-only" 
                                 title="Envoyer par e-mail"
-                                style={{ background: 'linear-gradient(135deg, var(--color-gold), var(--color-gold-hover))', color: 'var(--bg-primary)' }}
-                                onClick={() => handleOpenSendEmail(inv)}
+                                onClick={() => handleOpenSendEmail(inv, 'invoice')}
                               >
                                 <Icons.Email />
                               </button>
@@ -1450,6 +2021,625 @@ export default function App() {
             </div>
           </div>
         )}
+
+        {/* --- TAB: ESTIMATES (DEVIS) --- */}
+        {activeTab === 'estimates' && (
+          <div>
+            <div className="page-header">
+              <div className="page-title-container">
+                <h1>Gestion des Devis</h1>
+                <p>Créez, éditez, exportez et convertissez vos devis en factures.</p>
+              </div>
+              <div className="flex-gap-2">
+                <button className="btn btn-primary" onClick={handleCreateEstimateClick}>
+                  <Icons.Add /> Nouveau Devis
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="filter-bar">
+              <div style={{ position: 'relative', flexGrow: 1 }}>
+                <span className="search-icon"><Icons.Search /></span>
+                <input 
+                  type="text" 
+                  className="search-input" 
+                  placeholder="Rechercher un devis (Numéro, client, description...)"
+                  value={estimatesSearch}
+                  onChange={(e) => setEstimatesSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Estimates Table */}
+            {estimates.length === 0 ? (
+              <div className="empty-state">
+                <p>Aucun devis créé pour le moment. Cliquez sur "Nouveau Devis" pour commencer.</p>
+              </div>
+            ) : (
+              <div className="table-container">
+                <table className="table-glass">
+                  <thead>
+                    <tr>
+                      <th>Numéro</th>
+                      <th>Client</th>
+                      <th>Date</th>
+                      <th>Statut</th>
+                      <th>Montant HT</th>
+                      <th>Total TTC</th>
+                      <th className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {estimates
+                      .filter(est => 
+                        est.estimateNumber.toLowerCase().includes(estimatesSearch.toLowerCase()) ||
+                        est.companyName.toLowerCase().includes(estimatesSearch.toLowerCase()) ||
+                        (est.description && est.description.toLowerCase().includes(estimatesSearch.toLowerCase()))
+                      )
+                      .map(est => (
+                        <tr key={est.id}>
+                          <td style={{ fontWeight: 600, color: 'var(--color-gold)' }}>{est.estimateNumber}</td>
+                          <td>{est.companyName}</td>
+                          <td>{new Date(est.date).toLocaleDateString('fr-FR')}</td>
+                          <td>
+                            {est.status === 'brouillon' && <span className="badge badge-secondary">Brouillon</span>}
+                            {est.status === 'envoye' && <span className="badge badge-blue">Envoyé</span>}
+                            {est.status === 'accepte' && <span className="badge badge-success">Accepté</span>}
+                            {est.status === 'refuse' && <span className="badge badge-danger">Refusé</span>}
+                          </td>
+                          <td>{est.amountHt.toFixed(2)} €</td>
+                          <td style={{ fontWeight: 600 }}>{est.amountTotal.toFixed(2)} €</td>
+                          <td className="text-right">
+                            <div className="flex-gap-2" style={{ justifyContent: 'flex-end' }}>
+                              {est.status !== 'accepte' && (
+                                <button 
+                                  className="btn btn-secondary"
+                                  style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', border: '1px solid var(--color-gold)', color: 'var(--color-gold)' }}
+                                  title="Convertir en Facture"
+                                  onClick={() => handleConvertEstimateToInvoice(est)}
+                                >
+                                  Facturer
+                                </button>
+                              )}
+                              <button 
+                                className="btn btn-secondary btn-icon-only" 
+                                title="Envoyer par e-mail"
+                                onClick={() => handleOpenSendEmail(est, 'estimate')}
+                              >
+                                <Icons.Email />
+                              </button>
+                              <button 
+                                className="btn btn-secondary btn-icon-only" 
+                                title="Télécharger le PDF"
+                                onClick={() => handleExportEstimatePDF(est)}
+                              >
+                                <Icons.Download />
+                              </button>
+                              <button 
+                                className="btn btn-secondary btn-icon-only" 
+                                title="Modifier le devis"
+                                onClick={() => handleEditEstimateClick(est)}
+                              >
+                                <Icons.Edit />
+                              </button>
+                              <button 
+                                className="btn btn-danger btn-icon-only" 
+                                title="Supprimer le devis"
+                                onClick={() => handleDeleteEstimate(est.id)}
+                              >
+                                <Icons.Delete />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- TAB: EXPENSES (DÉPENSES) --- */}
+        {activeTab === 'expenses' && (
+          <div>
+            <div className="page-header">
+              <div className="page-title-container">
+                <h1>Registre des Dépenses</h1>
+                <p>Enregistrez vos frais et achats professionnels pour calculer votre bénéfice réel.</p>
+              </div>
+              <div className="flex-gap-2">
+                <button className="btn btn-primary" onClick={handleCreateExpenseClick}>
+                  <Icons.Add /> Nouvelle Dépense
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="filter-bar">
+              <div style={{ position: 'relative', flexGrow: 1 }}>
+                <span className="search-icon"><Icons.Search /></span>
+                <input 
+                  type="text" 
+                  className="search-input" 
+                  placeholder="Rechercher une dépense (Fournisseur, catégorie, description...)"
+                  value={expensesSearch}
+                  onChange={(e) => setExpensesSearch(e.target.value)}
+                />
+              </div>
+            </div>
+
+            {/* Expenses Table */}
+            {expenses.length === 0 ? (
+              <div className="empty-state">
+                <p>Aucune dépense enregistrée. Cliquez sur "Nouvelle Dépense" pour commencer.</p>
+              </div>
+            ) : (
+              <div className="table-container">
+                <table className="table-glass">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Fournisseur</th>
+                      <th>Catégorie</th>
+                      <th>Description</th>
+                      <th>Moyen</th>
+                      <th>Montant HT</th>
+                      <th className="text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {expenses
+                      .filter(exp => 
+                        exp.merchant.toLowerCase().includes(expensesSearch.toLowerCase()) ||
+                        exp.category.toLowerCase().includes(expensesSearch.toLowerCase()) ||
+                        (exp.description && exp.description.toLowerCase().includes(expensesSearch.toLowerCase()))
+                      )
+                      .map(exp => (
+                        <tr key={exp.id}>
+                          <td>{new Date(exp.date).toLocaleDateString('fr-FR')}</td>
+                          <td style={{ fontWeight: 600, color: 'var(--color-gold)' }}>{exp.merchant}</td>
+                          <td>
+                            <span className="badge badge-secondary">{exp.category}</span>
+                          </td>
+                          <td>{exp.description}</td>
+                          <td>
+                            {exp.paymentMethod === 'carte' && '💳 Carte'}
+                            {exp.paymentMethod === 'virement' && '🏦 Virement'}
+                            {exp.paymentMethod === 'prelevement' && '🔄 Prélèv.'}
+                            {exp.paymentMethod === 'especes' && '💵 Espèces'}
+                            {exp.paymentMethod === 'cheque' && '✉️ Chèque'}
+                          </td>
+                          <td style={{ fontWeight: 600, color: '#FF6B8B' }}>{exp.amount.toFixed(2)} €</td>
+                          <td className="text-right">
+                            <div className="flex-gap-2" style={{ justifyContent: 'flex-end' }}>
+                              <button 
+                                className="btn btn-secondary btn-icon-only" 
+                                title="Modifier la dépense"
+                                onClick={() => handleEditExpenseClick(exp)}
+                              >
+                                <Icons.Edit />
+                              </button>
+                              <button 
+                                className="btn btn-danger btn-icon-only" 
+                                title="Supprimer la dépense"
+                                onClick={() => handleDeleteExpense(exp.id)}
+                              >
+                                <Icons.Delete />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* --- TAB: COMPTABILITÉ & DÉCLARATIONS --- */}
+        {activeTab === 'compta' && (
+          <div>
+            <div className="page-header">
+              <div className="page-title-container">
+                <h1>Comptabilité & Déclarations</h1>
+                <p>Suivez vos recettes encaissées, estimez vos cotisations et surveillez vos seuils légaux.</p>
+              </div>
+            </div>
+
+            {/* Sub-navigation Tabs */}
+            <div className="flex-gap-2" style={{ borderBottom: '1px solid var(--border-glass)', paddingBottom: '0.75rem', marginBottom: '1.5rem' }}>
+              <button 
+                className={`btn ${comptaActiveTab === 'recettes' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setComptaActiveTab('recettes')}
+              >
+                Livre des Recettes
+              </button>
+              <button 
+                className={`btn ${comptaActiveTab === 'urssaf' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setComptaActiveTab('urssaf')}
+              >
+                Déclaration URSSAF
+              </button>
+              <button 
+                className={`btn ${comptaActiveTab === 'seuils' ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setComptaActiveTab('seuils')}
+              >
+                Seuils de Chiffre d'Affaires
+              </button>
+            </div>
+
+            {/* SUBTAB: RECETTES (LIVRE DES RECETTES) */}
+            {comptaActiveTab === 'recettes' && (
+              <div>
+                <div className="flex-between" style={{ marginBottom: '1rem' }}>
+                  <h3 style={{ fontFamily: 'var(--font-title)' }}>Registre Chronologique des Recettes Encaissées</h3>
+                  <button 
+                    className="btn btn-secondary"
+                    onClick={() => {
+                      // Export to CSV
+                      const paidInvoices = invoices.filter(inv => inv.status === 'payee').sort((a,b) => new Date(a.paymentDate || a.date) - new Date(b.paymentDate || b.date));
+                      if (paidInvoices.length === 0) {
+                        showAlert("Erreur", "Aucune recette encaissée à exporter.");
+                        return;
+                      }
+                      let csv = "\uFEFFDate Encaissement;Facture;Client;Moyen de Paiement;Montant HT;Montant TTC\n";
+                      paidInvoices.forEach(inv => {
+                        const date = new Date(inv.paymentDate || inv.date).toLocaleDateString('fr-FR');
+                        csv += `"${date}";"${inv.invoiceNumber}";"${inv.companyName}";"${inv.paymentMethod || 'Virement'}";${inv.amountHt.toFixed(2).replace('.', ',')};${inv.amountTotal.toFixed(2).replace('.', ',')}\n`;
+                      });
+                      
+                      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement("a");
+                      link.setAttribute("href", url);
+                      link.setAttribute("download", `Livre_des_recettes_${new Date().getFullYear()}.csv`);
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                  >
+                    Exporter en CSV (.excel)
+                  </button>
+                </div>
+
+                <div className="table-container" style={{ marginTop: '0' }}>
+                  <table className="table-glass">
+                    <thead>
+                      <tr>
+                        <th>Date Encaissement</th>
+                        <th>N° Facture</th>
+                        <th>Client</th>
+                        <th>Moyen de Règlement</th>
+                        <th>Montant HT</th>
+                        <th>Montant TTC</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {invoices
+                        .filter(inv => inv.status === 'payee')
+                        .sort((a, b) => new Date(b.paymentDate || b.date) - new Date(a.paymentDate || a.date))
+                        .map(inv => (
+                          <tr key={inv.id}>
+                            <td style={{ fontWeight: 600, color: 'var(--color-gold)' }}>
+                              {new Date(inv.paymentDate || inv.date).toLocaleDateString('fr-FR')}
+                            </td>
+                            <td>{inv.invoiceNumber}</td>
+                            <td>{inv.companyName}</td>
+                            <td style={{ textTransform: 'capitalize' }}>
+                              {inv.paymentMethod === 'carte' && '💳 Carte'}
+                              {inv.paymentMethod === 'virement' && '🏦 Virement'}
+                              {inv.paymentMethod === 'especes' && '💵 Espèces'}
+                              {inv.paymentMethod === 'cheque' && '✉️ Chèque'}
+                              {(!inv.paymentMethod) && '🏦 Virement'}
+                            </td>
+                            <td>{inv.amountHt.toFixed(2)} €</td>
+                            <td style={{ fontWeight: 600 }}>{inv.amountTotal.toFixed(2)} €</td>
+                          </tr>
+                        ))}
+                      {invoices.filter(inv => inv.status === 'payee').length === 0 && (
+                        <tr>
+                          <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
+                            Aucune facture n'est encore marquée comme "Payée".
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* SUBTAB: URSSAF DECLARATION PANEL */}
+            {comptaActiveTab === 'urssaf' && (
+              <div>
+                <h3 style={{ fontFamily: 'var(--font-title)', marginBottom: '1rem' }}>Simulateur de Déclaration Mensuelle / Trimestrielle</h3>
+                
+                <div className="card-glass" style={{ marginBottom: '1.5rem', padding: '1.25rem' }}>
+                  <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
+                    <div className="form-group" style={{ marginBottom: '0', minWidth: '150px' }}>
+                      <label className="form-label">Type de Période</label>
+                      <select className="form-input" value={periodType} onChange={(e) => setPeriodType(e.target.value)}>
+                        <option value="monthly">Mensuelle</option>
+                        <option value="quarterly">Trimestrielle</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ marginBottom: '0', minWidth: '120px' }}>
+                      <label className="form-label">Année</label>
+                      <select className="form-input" value={selectedYear} onChange={(e) => setSelectedYear(parseInt(e.target.value))}>
+                        <option value={2026}>2026</option>
+                        <option value={2025}>2025</option>
+                      </select>
+                    </div>
+
+                    {periodType === 'monthly' ? (
+                      <div className="form-group" style={{ marginBottom: '0', minWidth: '150px' }}>
+                        <label className="form-label">Mois</label>
+                        <select className="form-input" value={selectedMonth} onChange={(e) => setSelectedMonth(parseInt(e.target.value))}>
+                          <option value={1}>Janvier</option>
+                          <option value={2}>Février</option>
+                          <option value={3}>Mars</option>
+                          <option value={4}>Avril</option>
+                          <option value={5}>Mai</option>
+                          <option value={6}>Juin</option>
+                          <option value={7}>Juillet</option>
+                          <option value={8}>Août</option>
+                          <option value={9}>Septembre</option>
+                          <option value={10}>Octobre</option>
+                          <option value={11}>Novembre</option>
+                          <option value={12}>Décembre</option>
+                        </select>
+                      </div>
+                    ) : (
+                      <div className="form-group" style={{ marginBottom: '0', minWidth: '150px' }}>
+                        <label className="form-label">Trimestre</label>
+                        <select className="form-input" value={selectedQuarter} onChange={(e) => setSelectedQuarter(parseInt(e.target.value))}>
+                          <option value={1}>T1 (Jan - Fév - Mar)</option>
+                          <option value={2}>T2 (Avr - Mai - Jun)</option>
+                          <option value={3}>T3 (Jul - Aoû - Sep)</option>
+                          <option value={4}>T4 (Oct - Nov - Déc)</option>
+                        </select>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Calculate Period Data */}
+                {(() => {
+                  let bncHt = 0;
+                  let bicHt = 0;
+                  let venteHt = 0;
+                  
+                  invoices.forEach(inv => {
+                    if (inv.status !== 'payee') return;
+                    
+                    const paymentDate = new Date(inv.paymentDate || inv.date);
+                    if (paymentDate.getFullYear() !== selectedYear) return;
+                    
+                    const month = paymentDate.getMonth() + 1; // 1-12
+                    
+                    let matchesPeriod = false;
+                    if (periodType === 'monthly') {
+                      matchesPeriod = month === selectedMonth;
+                    } else {
+                      const quarter = Math.floor((month - 1) / 3) + 1;
+                      matchesPeriod = quarter === selectedQuarter;
+                    }
+                    
+                    if (matchesPeriod) {
+                      if (inv.serviceType === 'service_bnc') bncHt += inv.amountHt;
+                      else if (inv.serviceType === 'service_bic') bicHt += inv.amountHt;
+                      else if (inv.serviceType === 'vente') venteHt += inv.amountHt;
+                    }
+                  });
+
+                  const bncRate = businessSettings.acreEnabled ? (businessSettings.urssafServiceBnc / 2) : businessSettings.urssafServiceBnc;
+                  const bicRate = businessSettings.acreEnabled ? (businessSettings.urssafServiceBic / 2) : businessSettings.urssafServiceBic;
+                  const venteRate = businessSettings.acreEnabled ? (businessSettings.urssafVente / 2) : businessSettings.urssafVente;
+
+                  const bncCharges = (bncHt * bncRate) / 100;
+                  const bicCharges = (bicHt * bicRate) / 100;
+                  const venteCharges = (venteHt * venteRate) / 100;
+                  
+                  const totalPeriodCa = bncHt + bicHt + venteHt;
+                  const totalPeriodCharges = bncCharges + bicCharges + venteCharges;
+
+                  return (
+                    <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: '1.5rem' }}>
+                      <div className="card-glass" style={{ padding: '1.5rem' }}>
+                        <h4 style={{ fontFamily: 'var(--font-title)', color: 'var(--color-gold)', marginBottom: '1.25rem' }}>
+                          Montants à déclarer à l'URSSAF
+                        </h4>
+                        
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                          <div className="flex-between" style={{ paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-glass)' }}>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Prestations de Services Libérales (BNC)</div>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Taux de cotisation appliqué : {bncRate}%</span>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--color-gold)' }}>{bncHt.toFixed(2)} €</div>
+                              <span style={{ fontSize: '0.75rem', color: '#FF6B8B' }}>Cotisations : {bncCharges.toFixed(2)} €</span>
+                            </div>
+                          </div>
+
+                          <div className="flex-between" style={{ paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-glass)' }}>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Prestations de Services Artisanales/Comm. (BIC)</div>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Taux de cotisation appliqué : {bicRate}%</span>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--color-gold)' }}>{bicHt.toFixed(2)} €</div>
+                              <span style={{ fontSize: '0.75rem', color: '#FF6B8B' }}>Cotisations : {bicCharges.toFixed(2)} €</span>
+                            </div>
+                          </div>
+
+                          <div className="flex-between" style={{ paddingBottom: '0.75rem', borderBottom: '1px solid var(--border-glass)' }}>
+                            <div>
+                              <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Achat / Vente de Marchandises (BIC)</div>
+                              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Taux de cotisation appliqué : {venteRate}%</span>
+                            </div>
+                            <div style={{ textAlign: 'right' }}>
+                              <div style={{ fontSize: '1.15rem', fontWeight: 700, color: 'var(--color-gold)' }}>{venteHt.toFixed(2)} €</div>
+                              <span style={{ fontSize: '0.75rem', color: '#FF6B8B' }}>Cotisations : {venteCharges.toFixed(2)} €</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex-between" style={{ marginTop: '1.5rem', padding: '1rem', backgroundColor: 'rgba(255,255,255,0.02)', borderRadius: '8px', border: '1px solid var(--border-glass)' }}>
+                          <span style={{ fontWeight: 700 }}>Total Charges Période</span>
+                          <span style={{ fontSize: '1.25rem', fontWeight: 800, color: '#FF6B8B' }}>{totalPeriodCharges.toFixed(2)} €</span>
+                        </div>
+                      </div>
+
+                      <div className="card-glass" style={{ padding: '1.5rem', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
+                        <div>
+                          <h4 style={{ fontFamily: 'var(--font-title)', marginBottom: '1rem' }}>Informations de déclaration</h4>
+                          <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: '1.5', marginBottom: '1rem' }}>
+                            Pour déclarer vos cotisations, rendez-vous sur votre espace professionnel <strong>autoentrepreneur.urssaf.fr</strong>.
+                          </p>
+                          <div style={{ padding: '1rem', backgroundColor: 'rgba(229,169,60,0.03)', borderRadius: '8px', border: '1px dashed rgba(229,169,60,0.2)', fontSize: '0.85rem', lineHeight: '1.5' }}>
+                            📌 <strong>Rappel :</strong> Vous devez déclarer le Chiffre d'Affaires <strong>réellement encaissé</strong> au cours de la période sélectionnée, et non le montant facturé non payé.
+                          </div>
+                        </div>
+                        
+                        <div style={{ marginTop: '1.5rem' }}>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '0.25rem' }}>CA Encaissé sur la période</div>
+                          <div style={{ fontSize: '1.75rem', fontWeight: 800, color: 'var(--color-gold)' }}>{totalPeriodCa.toFixed(2)} €</div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+
+            {/* SUBTAB: SEUILS DE CA & TVA */}
+            {comptaActiveTab === 'seuils' && (
+              <div>
+                <h3 style={{ fontFamily: 'var(--font-title)', marginBottom: '1.25rem' }}>Surveillance des Seuils (Plafonds Annuels)</h3>
+                
+                {(() => {
+                  // Calculate cumulative CA by category for current year
+                  const currentYear = new Date().getFullYear();
+                  let serviceCa = 0; // Services BNC + Services BIC
+                  let venteCa = 0; // Vente BIC
+                  
+                  invoices.forEach(inv => {
+                    if (inv.status !== 'payee') return;
+                    const paymentDate = new Date(inv.paymentDate || inv.date);
+                    if (paymentDate.getFullYear() === currentYear) {
+                      if (inv.serviceType === 'vente') {
+                        venteCa += inv.amountHt;
+                      } else {
+                        serviceCa += inv.amountHt;
+                      }
+                    }
+                  });
+
+                  // Thresholds definition
+                  const limitTvaService = 36800;
+                  const toleranceTvaService = 39100;
+                  const limitMicroService = 77700;
+
+                  const limitTvaVente = 91900;
+                  const toleranceTvaVente = 101000;
+                  const limitMicroVente = 188700;
+
+                  // Percentages
+                  const pctTvaService = Math.min((serviceCa / toleranceTvaService) * 100, 100);
+                  const pctMicroService = Math.min((serviceCa / limitMicroService) * 100, 100);
+                  
+                  const pctTvaVente = Math.min((venteCa / toleranceTvaVente) * 100, 100);
+                  const pctMicroVente = Math.min((venteCa / limitMicroVente) * 100, 100);
+
+                  return (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                      {/* Section : Services */}
+                      <div className="card-glass" style={{ padding: '1.5rem' }}>
+                        <h4 style={{ fontFamily: 'var(--font-title)', color: 'var(--color-gold)', marginBottom: '1rem' }}>
+                          Activités de Services (Plafonds pour {currentYear})
+                        </h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                          {/* TVA Services */}
+                          <div>
+                            <div className="flex-between" style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                              <span>Seuil Franchise de TVA (Services)</span>
+                              <span style={{ fontWeight: 600 }}>{serviceCa.toLocaleString('fr-FR')} € / {toleranceTvaService.toLocaleString('fr-FR')} €</span>
+                            </div>
+                            <div style={{ height: '10px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '5px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                              <div style={{ height: '100%', width: `${pctTvaService}%`, background: serviceCa > limitTvaService ? 'linear-gradient(90deg, #FF6B8B, #EF4444)' : 'linear-gradient(90deg, var(--color-gold), var(--color-gold-hover))', borderRadius: '5px' }}></div>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', color: serviceCa > limitTvaService ? '#FF6B8B' : 'var(--text-muted)' }}>
+                              {serviceCa > limitTvaService 
+                                ? "⚠️ Vous avez dépassé le seuil de franchise. Vous devez facturer de la TVA."
+                                : `Il vous reste ${(toleranceTvaService - serviceCa).toLocaleString('fr-FR')} € de marge avant d'assujettir vos services à la TVA.`}
+                            </span>
+                          </div>
+
+                          {/* Plafond Régime Services */}
+                          <div>
+                            <div className="flex-between" style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                              <span>Plafond Régime Micro-Entreprise (Services)</span>
+                              <span style={{ fontWeight: 600 }}>{serviceCa.toLocaleString('fr-FR')} € / {limitMicroService.toLocaleString('fr-FR')} €</span>
+                            </div>
+                            <div style={{ height: '10px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '5px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                              <div style={{ height: '100%', width: `${pctMicroService}%`, background: 'linear-gradient(90deg, var(--color-blue), #38BDF8)', borderRadius: '5px' }}></div>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              Plafond légal au-delà duquel vous devez basculer vers un régime réel d'imposition.
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Section : Ventes */}
+                      <div className="card-glass" style={{ padding: '1.5rem' }}>
+                        <h4 style={{ fontFamily: 'var(--font-title)', color: 'var(--color-gold)', marginBottom: '1rem' }}>
+                          Activités d'Achat / Vente de Marchandises (Plafonds pour {currentYear})
+                        </h4>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
+                          {/* TVA Ventes */}
+                          <div>
+                            <div className="flex-between" style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                              <span>Seuil Franchise de TVA (Ventes)</span>
+                              <span style={{ fontWeight: 600 }}>{venteCa.toLocaleString('fr-FR')} € / {toleranceTvaVente.toLocaleString('fr-FR')} €</span>
+                            </div>
+                            <div style={{ height: '10px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '5px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                              <div style={{ height: '100%', width: `${pctTvaVente}%`, background: venteCa > limitTvaVente ? 'linear-gradient(90deg, #FF6B8B, #EF4444)' : 'linear-gradient(90deg, var(--color-gold), var(--color-gold-hover))', borderRadius: '5px' }}></div>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', color: venteCa > limitTvaVente ? '#FF6B8B' : 'var(--text-muted)' }}>
+                              {venteCa > limitTvaVente 
+                                ? "⚠️ Vous avez dépassé le seuil de franchise. Vous devez facturer de la TVA."
+                                : `Il vous reste ${(toleranceTvaVente - venteCa).toLocaleString('fr-FR')} € de marge avant d'assujettir vos ventes à la TVA.`}
+                            </span>
+                          </div>
+
+                          {/* Plafond Régime Ventes */}
+                          <div>
+                            <div className="flex-between" style={{ marginBottom: '0.5rem', fontSize: '0.9rem' }}>
+                              <span>Plafond Régime Micro-Entreprise (Ventes)</span>
+                              <span style={{ fontWeight: 600 }}>{venteCa.toLocaleString('fr-FR')} € / {limitMicroVente.toLocaleString('fr-FR')} €</span>
+                            </div>
+                            <div style={{ height: '10px', backgroundColor: 'rgba(255,255,255,0.05)', borderRadius: '5px', overflow: 'hidden', marginBottom: '0.5rem' }}>
+                              <div style={{ height: '100%', width: `${pctMicroVente}%`, background: 'linear-gradient(90deg, var(--color-blue), #38BDF8)', borderRadius: '5px' }}></div>
+                            </div>
+                            <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                              Plafond légal d'activité pour l'achat / revente de marchandises.
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            )}
+          </div>
+        )}
       </main>
 
       {/* --- MODAL: CLIENT ADD/EDIT --- */}
@@ -1651,6 +2841,297 @@ export default function App() {
                 </button>
                 <button type="submit" className="btn btn-primary">
                   Générer & Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: ESTIMATE ADD/EDIT --- */}
+      {estimateModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h2>{estimateForm.id ? 'Modifier le devis' : 'Générer un devis'}</h2>
+              <button 
+                className="btn btn-secondary btn-icon-only" 
+                style={{ borderRadius: '50%' }}
+                onClick={() => setEstimateModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <form onSubmit={handleSaveEstimate}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Client</label>
+                  <select 
+                    className="form-input"
+                    value={estimateForm.clientId}
+                    onChange={(e) => setEstimateForm({ ...estimateForm, clientId: e.target.value })}
+                  >
+                    {clients.map(c => (
+                      <option key={c.id} value={c.id}>{c.companyName} ({c.contactName})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Type d'activité</label>
+                  <select 
+                    className="form-input"
+                    value={estimateForm.serviceType}
+                    onChange={(e) => setEstimateForm({ ...estimateForm, serviceType: e.target.value })}
+                  >
+                    <option value="service_bnc">Prestation de service - Profession Libérale (BNC)</option>
+                    <option value="service_bic">Prestation de service - Artisanale / Commerciale (BIC)</option>
+                    <option value="vente">Achat / Vente de marchandises (BIC)</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Taux de TVA (%)</label>
+                  <select 
+                    className="form-input"
+                    value={estimateForm.tvaRate}
+                    onChange={(e) => setEstimateForm({ ...estimateForm, tvaRate: e.target.value })}
+                  >
+                    <option value="0">0% (Franchise en base de TVA)</option>
+                    <option value="5.5">5.5% (Taux réduit)</option>
+                    <option value="10">10% (Taux intermédiaire)</option>
+                    <option value="20">20% (Taux standard)</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Montant HT (€)</label>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    className={`form-input ${estimateFormErrors.amountHt ? 'error' : ''}`}
+                    value={estimateForm.amountHt}
+                    onChange={(e) => setEstimateForm({ ...estimateForm, amountHt: e.target.value })}
+                    placeholder="Ex: 1500.00"
+                  />
+                  {estimateFormErrors.amountHt && <span className="error-text">{estimateFormErrors.amountHt}</span>}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Date du devis</label>
+                  <input 
+                    type="date" 
+                    className="form-input"
+                    value={estimateForm.date}
+                    onChange={(e) => setEstimateForm({ ...estimateForm, date: e.target.value })}
+                  />
+                </div>
+
+                {estimateForm.id && (
+                  <div className="form-group">
+                    <label className="form-label">Statut du devis</label>
+                    <select 
+                      className="form-input"
+                      value={estimateForm.status}
+                      onChange={(e) => setEstimateForm({ ...estimateForm, status: e.target.value })}
+                    >
+                      <option value="brouillon">Brouillon</option>
+                      <option value="envoye">Envoyé</option>
+                      <option value="accepte">Accepté</option>
+                      <option value="refuse">Refusé</option>
+                    </select>
+                  </div>
+                )}
+
+                <div className="form-group">
+                  <label className="form-label">Description des prestations</label>
+                  <textarea 
+                    className={`form-input ${estimateFormErrors.description ? 'error' : ''}`}
+                    style={{ minHeight: '80px', resize: 'vertical' }}
+                    value={estimateForm.description}
+                    onChange={(e) => setEstimateForm({ ...estimateForm, description: e.target.value })}
+                    placeholder="Détaillez les travaux prévus..."
+                  />
+                  {estimateFormErrors.description && <span className="error-text">{estimateFormErrors.description}</span>}
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setEstimateModalOpen(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: EXPENSE ADD/EDIT --- */}
+      {expenseModalOpen && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-header">
+              <h2>{expenseForm.id ? 'Modifier la dépense' : 'Enregistrer une dépense'}</h2>
+              <button 
+                className="btn btn-secondary btn-icon-only" 
+                style={{ borderRadius: '50%' }}
+                onClick={() => setExpenseModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <form onSubmit={handleSaveExpense}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Fournisseur</label>
+                  <input 
+                    type="text" 
+                    className={`form-input ${expenseFormErrors.merchant ? 'error' : ''}`}
+                    value={expenseForm.merchant}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, merchant: e.target.value })}
+                    placeholder="Ex: OVHcloud, SNCF..."
+                  />
+                  {expenseFormErrors.merchant && <span className="error-text">{expenseFormErrors.merchant}</span>}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Montant (€)</label>
+                  <input 
+                    type="number" 
+                    step="0.01"
+                    className={`form-input ${expenseFormErrors.amount ? 'error' : ''}`}
+                    value={expenseForm.amount}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, amount: e.target.value })}
+                    placeholder="Ex: 50.00"
+                  />
+                  {expenseFormErrors.amount && <span className="error-text">{expenseFormErrors.amount}</span>}
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Date de la dépense</label>
+                  <input 
+                    type="date" 
+                    className="form-input"
+                    value={expenseForm.date}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, date: e.target.value })}
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Catégorie</label>
+                  <select 
+                    className="form-input"
+                    value={expenseForm.category}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, category: e.target.value })}
+                  >
+                    <option value="Achats">Achats de marchandises</option>
+                    <option value="Déplacements">Déplacements / Transport</option>
+                    <option value="Logiciels">Abonnements logiciels / Cloud</option>
+                    <option value="Télécoms">Télécommunications / Téléphone</option>
+                    <option value="Bureautique">Fournitures de bureau</option>
+                    <option value="Cotisations">Autres cotisations / Assurances</option>
+                    <option value="Autre">Autre frais</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Moyen de paiement</label>
+                  <select 
+                    className="form-input"
+                    value={expenseForm.paymentMethod}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, paymentMethod: e.target.value })}
+                  >
+                    <option value="carte">💳 Carte bancaire</option>
+                    <option value="virement">🏦 Virement</option>
+                    <option value="prelevement">🔄 Prélèvement automatique</option>
+                    <option value="especes">💵 Espèces</option>
+                    <option value="cheque">✉️ Chèque</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Description (facultative)</label>
+                  <input 
+                    type="text" 
+                    className="form-input"
+                    value={expenseForm.description}
+                    onChange={(e) => setExpenseForm({ ...expenseForm, description: e.target.value })}
+                    placeholder="Ex: VPS mois de juin..."
+                  />
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setExpenseModalOpen(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  Enregistrer
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* --- MODAL: MARK AS PAID --- */}
+      {paymentModalOpen && (
+        <div className="modal-overlay" style={{ zIndex: 105 }}>
+          <div className="modal-content" style={{ maxWidth: '450px' }}>
+            <div className="modal-header">
+              <h2>Enregistrer le règlement</h2>
+              <button 
+                className="btn btn-secondary btn-icon-only" 
+                style={{ borderRadius: '50%' }}
+                onClick={() => setPaymentModalOpen(false)}
+              >
+                ✕
+              </button>
+            </div>
+            
+            <form onSubmit={handleSavePayment}>
+              <div className="modal-body">
+                <p style={{ marginBottom: '1.25rem', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                  Veuillez renseigner la date et le moyen de paiement pour marquer la facture <strong>{paymentForm.invoiceNumber}</strong> comme payée.
+                </p>
+
+                <div className="form-group">
+                  <label className="form-label">Date d'encaissement</label>
+                  <input 
+                    type="date" 
+                    className="form-input"
+                    value={paymentForm.paymentDate}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, paymentDate: e.target.value })}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Moyen de règlement</label>
+                  <select 
+                    className="form-input"
+                    value={paymentForm.paymentMethod}
+                    onChange={(e) => setPaymentForm({ ...paymentForm, paymentMethod: e.target.value })}
+                  >
+                    <option value="virement">🏦 Virement bancaire</option>
+                    <option value="carte">💳 Carte bancaire</option>
+                    <option value="especes">💵 Espèces</option>
+                    <option value="cheque">✉️ Chèque</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setPaymentModalOpen(false)}>
+                  Annuler
+                </button>
+                <button type="submit" className="btn btn-primary" style={{ background: 'linear-gradient(135deg, var(--color-gold), var(--color-gold-hover))', color: 'var(--bg-primary)' }}>
+                  Valider le paiement
                 </button>
               </div>
             </form>

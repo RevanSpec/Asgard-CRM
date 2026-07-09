@@ -551,6 +551,12 @@ body {
   color: var(--color-blue);
 }
 
+.badge-secondary {
+  background-color: rgba(255, 255, 255, 0.08);
+  color: var(--text-secondary);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
 .search-container {
   position: relative;
   max-width: 300px;
