@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, generateInvoiceNumber } from './db';
-import { exportInvoiceToPDF, generateInvoicePDF } from './pdfGenerator';
+import { db, generateInvoiceNumber, exportDatabaseData, importDatabaseData } from './db';
+import { exportInvoiceToPDF, generateInvoicePDF, exportEstimateToPDF } from './pdfGenerator';
 
 // Electron IPC renderer (safe for web testing too)
 const ipcRenderer = window.require ? window.require('electron').ipcRenderer : null;
@@ -118,7 +118,9 @@ const defaultSettings = {
   smtpPort: '1025',
   smtpUser: '',
   smtpPass: '',
-  smtpSecure: 'none'
+  smtpSecure: 'none',
+  customColor: '#E5A93C',
+  logoBase64: ''
 };
 
 // Regex declarations
@@ -400,7 +402,7 @@ export default function App() {
   useEffect(() => {
     const saved = localStorage.getItem('asgard_crm_settings');
     if (saved) {
-      setBusinessSettings(JSON.parse(saved));
+      setBusinessSettings({ ...defaultSettings, ...JSON.parse(saved) });
     } else {
       localStorage.setItem('asgard_crm_settings', JSON.stringify(defaultSettings));
     }
@@ -416,6 +418,84 @@ export default function App() {
   const saveSettings = (newSettings) => {
     setBusinessSettings(newSettings);
     localStorage.setItem('asgard_crm_settings', JSON.stringify(newSettings));
+  };
+
+  // Export all DB tables and settings as a JSON file backup
+  const handleExportBackup = async () => {
+    try {
+      const dbData = await exportDatabaseData();
+      const settings = localStorage.getItem('asgard_crm_settings');
+      const backup = {
+        db: dbData,
+        settings: settings ? JSON.parse(settings) : defaultSettings,
+        backupVersion: 1,
+      };
+
+      const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(backup, null, 2))}`;
+      const downloadAnchor = document.createElement('a');
+      downloadAnchor.setAttribute("href", jsonString);
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      downloadAnchor.setAttribute("download", `asgard_crm_backup_${dateStr}.json`);
+      document.body.appendChild(downloadAnchor);
+      downloadAnchor.click();
+      downloadAnchor.remove();
+
+      showAlert("Succès", "Sauvegarde exportée avec succès !");
+    } catch (error) {
+      console.error(error);
+      showAlert("Erreur", "Échec de l'exportation de la sauvegarde : " + error.message);
+    }
+  };
+
+  // Import a JSON file backup and reload DB state
+  const handleImportBackup = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const confirmImport = window.confirm("Êtes-vous sûr de vouloir importer cette sauvegarde ? Cette action écrasera TOUTES les données actuelles de l'application (clients, factures, devis, dépenses et paramètres).");
+    if (!confirmImport) {
+      e.target.value = null;
+      return;
+    }
+
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        try {
+          const backup = JSON.parse(event.target.result);
+
+          if (!backup || (!backup.db && !backup.clients)) {
+            throw new Error("Le fichier importé n'est pas une sauvegarde Asgard CRM valide.");
+          }
+
+          const dbData = backup.db || backup;
+          const settingsData = backup.settings || null;
+
+          // 1. Import database tables
+          await importDatabaseData(dbData);
+
+          // 2. Restore settings
+          if (settingsData) {
+            saveSettings(settingsData);
+          }
+
+          // 3. Reload state
+          await loadAllData();
+
+          showAlert("Succès", "Sauvegarde restaurée avec succès ! Toutes les données ont été mises à jour.");
+        } catch (innerError) {
+          console.error(innerError);
+          showAlert("Erreur", "Erreur lors du traitement du fichier de sauvegarde : " + innerError.message);
+        }
+      };
+      reader.readAsText(file);
+    } catch (error) {
+      console.error(error);
+      showAlert("Erreur", "Impossible de lire le fichier de sauvegarde : " + error.message);
+    } finally {
+      e.target.value = null; // Clear file input
+    }
   };
 
   // Format Phone dynamically as 'xx xx xx xx xx'
@@ -1945,6 +2025,84 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Section : Identité Visuelle & PDF */}
+                <div className="settings-section" style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+                  <div className="settings-section-title">Identité Visuelle & PDF</div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1.25rem' }}>
+                    <div className="form-group">
+                      <label className="form-label">Couleur d'accentuation des PDF</label>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                        <input 
+                          type="color" 
+                          className="form-input"
+                          style={{ width: '50px', height: '40px', padding: '2px', cursor: 'pointer', border: '1px solid var(--border-glass)' }}
+                          value={businessSettings.customColor || '#E5A93C'}
+                          onChange={(e) => saveSettings({ ...businessSettings, customColor: e.target.value })}
+                        />
+                        <input 
+                          type="text" 
+                          className="form-input"
+                          style={{ fontFamily: 'monospace' }}
+                          value={businessSettings.customColor || '#E5A93C'}
+                          onChange={(e) => saveSettings({ ...businessSettings, customColor: e.target.value })}
+                        />
+                        <button 
+                          type="button" 
+                          className="btn btn-secondary" 
+                          onClick={() => saveSettings({ ...businessSettings, customColor: '#E5A93C' })}
+                          style={{ padding: '0.5rem 1rem', fontSize: '0.8rem' }}
+                        >
+                          Réinitialiser
+                        </button>
+                      </div>
+                      <span className="metric-subtext">Couleur utilisée pour les titres et totaux sur les devis/factures exportés.</span>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Logo de l'entreprise (Format image)</label>
+                      <div style={{ display: 'flex', gap: '0.75rem', alignItems: 'center' }}>
+                        {businessSettings.logoBase64 ? (
+                          <div style={{ position: 'relative', border: '1px solid var(--border-glass)', borderRadius: '4px', padding: '4px', background: 'rgba(255,255,255,0.05)', display: 'flex', alignItems: 'center', justifyContent: 'center', height: '40px', width: '60px' }}>
+                            <img src={businessSettings.logoBase64} alt="Logo" style={{ maxHeight: '100%', maxWidth: '100%', objectFit: 'contain' }} />
+                            <button 
+                              type="button" 
+                              style={{ position: 'absolute', top: '-5px', right: '-5px', background: '#EF4444', color: 'white', border: 'none', borderRadius: '50%', width: '16px', height: '16px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '10px', fontWeight: 'bold' }}
+                              onClick={() => saveSettings({ ...businessSettings, logoBase64: '' })}
+                              title="Supprimer le logo"
+                            >
+                              ×
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ border: '1px dashed var(--border-glass)', borderRadius: '4px', height: '40px', width: '60px', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '12px', color: 'var(--text-muted)' }}>
+                            Aucun
+                          </div>
+                        )}
+                        <input 
+                          type="file" 
+                          accept="image/*"
+                          style={{ display: 'none' }}
+                          id="logoUploadInput"
+                          onChange={(e) => {
+                            const file = e.target.files[0];
+                            if (file) {
+                              const reader = new FileReader();
+                              reader.onload = (event) => {
+                                saveSettings({ ...businessSettings, logoBase64: event.target.result });
+                              };
+                              reader.readAsDataURL(file);
+                            }
+                          }}
+                        />
+                        <label htmlFor="logoUploadInput" className="btn btn-secondary" style={{ padding: '0.5rem 1rem', fontSize: '0.8rem', cursor: 'pointer', margin: 0 }}>
+                          Choisir un logo
+                        </label>
+                      </div>
+                      <span className="metric-subtext">Recommandé : PNG transparent, format paysage (hauteur max 60px).</span>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Section : SMTP config */}
                 <div className="settings-section" style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
                   <div className="flex-between" style={{ marginBottom: '1.25rem' }}>
@@ -2016,6 +2174,39 @@ export default function App() {
                   <span className="metric-subtext" style={{ display: 'block', color: 'var(--color-gold)', lineHeight: '1.5' }}>
                     💡 Pour Proton Mail Bridge, laissez l'Hôte sur <strong>127.0.0.1</strong>, le port sur celui indiqué par votre application Bridge (souvent 1025), et choisissez "Aucune" pour la sécurité.
                   </span>
+                </div>
+
+                {/* Section : Sauvegarde et Restauration */}
+                <div className="settings-section" style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+                  <div className="settings-section-title">Sécurité & Sauvegarde des données</div>
+                  <p className="metric-subtext" style={{ marginBottom: '1.25rem', lineHeight: '1.5' }}>
+                    Vos données sont stockées localement dans votre base de données locale. Exportez régulièrement des sauvegardes pour éviter toute perte de données en cas de panne de votre ordinateur.
+                  </p>
+                  
+                  <div style={{ display: 'flex', gap: '1rem' }}>
+                    <button 
+                      type="button" 
+                      className="btn btn-primary"
+                      onClick={handleExportBackup}
+                    >
+                      Exporter les données (.json)
+                    </button>
+                    
+                    <input 
+                      type="file" 
+                      accept=".json"
+                      id="dbBackupImportInput"
+                      style={{ display: 'none' }}
+                      onChange={handleImportBackup}
+                    />
+                    <button 
+                      type="button" 
+                      className="btn btn-secondary"
+                      onClick={() => document.getElementById('dbBackupImportInput').click()}
+                    >
+                      Restaurer une sauvegarde
+                    </button>
+                  </div>
                 </div>
               </form>
             </div>

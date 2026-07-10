@@ -85,3 +85,53 @@ export async function generateEstimateNumber(companyName, dateStr) {
   
   return `DEV-${sanitizedClient}-${year}-${sequence}`;
 }
+
+/**
+ * Exports all database data to a single object.
+ * @returns {Promise<object>} The exported data
+ */
+export async function exportDatabaseData() {
+  return {
+    clients: await db.clients.toArray(),
+    invoices: await db.invoices.toArray(),
+    estimates: await db.estimates.toArray(),
+    expenses: await db.expenses.toArray(),
+    version: db.verno,
+    exportedAt: new Date().toISOString(),
+  };
+}
+
+/**
+ * Clears current database and imports data.
+ * @param {object} data - The data to import
+ * @returns {Promise<void>}
+ */
+export async function importDatabaseData(data) {
+  if (!data || typeof data !== 'object') {
+    throw new Error("Données de sauvegarde invalides.");
+  }
+
+  // Execute import inside a read-write transaction for atomicity
+  await db.transaction('rw', [db.clients, db.invoices, db.estimates, db.expenses], async () => {
+    // 1. Clear existing tables
+    await db.clients.clear();
+    await db.invoices.clear();
+    await db.estimates.clear();
+    await db.expenses.clear();
+
+    // 2. Repopulate with imported data if arrays exist
+    if (Array.isArray(data.clients)) {
+      await db.clients.bulkAdd(data.clients);
+    }
+    if (Array.isArray(data.invoices)) {
+      await db.invoices.bulkAdd(data.invoices);
+    }
+    if (Array.isArray(data.estimates)) {
+      await db.estimates.bulkAdd(data.estimates);
+    }
+    if (Array.isArray(data.expenses)) {
+      await db.expenses.bulkAdd(data.expenses);
+    }
+  });
+}
+

@@ -1,6 +1,23 @@
 import { jsPDF } from 'jspdf';
 
 /**
+ * Converts a hex color string to an RGB array.
+ * @param {string} hex - The hex color code
+ * @returns {number[]} RGB array
+ */
+function hexToRgb(hex) {
+  if (!hex) return [229, 169, 60];
+  const shorthandRegex = /^#?([a-f\d])([a-f\d])([a-f\d])$/i;
+  const fullHex = hex.replace(shorthandRegex, (m, r, g, b) => r + r + g + g + b + b);
+  const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(fullHex);
+  return result ? [
+    parseInt(result[1], 16),
+    parseInt(result[2], 16),
+    parseInt(result[3], 16)
+  ] : [229, 169, 60];
+}
+
+/**
  * Generates the jsPDF instance for an invoice or an estimate.
  * @param {string} type - 'invoice' or 'estimate'
  * @param {object} docData - The invoice or estimate data
@@ -19,7 +36,7 @@ export function generateDocumentPDF(type, docData, client, businessSettings) {
 
   // Color Palette
   const primaryColor = [11, 15, 25]; // Dark Blue #0B0F19
-  const accentColor = [229, 169, 60]; // Gold #E5A93C
+  const accentColor = businessSettings.customColor ? hexToRgb(businessSettings.customColor) : [229, 169, 60];
   const greyColor = [100, 116, 139]; // Muted grey
 
   // Page width and height
@@ -29,15 +46,43 @@ export function generateDocumentPDF(type, docData, client, businessSettings) {
   doc.setFillColor(...primaryColor);
   doc.rect(0, 0, pageWidth, 40, 'F');
   
-  doc.setTextColor(...accentColor);
-  doc.setFont('Helvetica', 'bold');
-  doc.setFontSize(22);
-  doc.text('ASGARD CRM', 20, 25);
-  
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(9);
-  doc.setFont('Helvetica', 'normal');
-  doc.text('Gestion & Facturation Auto-Entreprise', 20, 32);
+  if (businessSettings.logoBase64) {
+    try {
+      const props = doc.getImageProperties(businessSettings.logoBase64);
+      const maxHeight = 24; // mm
+      const maxWidth = 60; // mm
+      let imgHeight = maxHeight;
+      let imgWidth = (props.width / props.height) * imgHeight;
+      if (imgWidth > maxWidth) {
+        imgWidth = maxWidth;
+        imgHeight = (props.height / props.width) * imgWidth;
+      }
+      const imgY = 8 + (maxHeight - imgHeight) / 2; // vertically center
+      doc.addImage(businessSettings.logoBase64, props.fileType, 20, imgY, imgWidth, imgHeight);
+    } catch (e) {
+      console.error('Error rendering PDF logo:', e);
+      // Fallback
+      doc.setTextColor(...accentColor);
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(22);
+      doc.text('ASGARD CRM', 20, 25);
+      
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(9);
+      doc.setFont('Helvetica', 'normal');
+      doc.text('Gestion & Facturation Auto-Entreprise', 20, 32);
+    }
+  } else {
+    doc.setTextColor(...accentColor);
+    doc.setFont('Helvetica', 'bold');
+    doc.setFontSize(22);
+    doc.text('ASGARD CRM', 20, 25);
+    
+    doc.setTextColor(255, 255, 255);
+    doc.setFontSize(9);
+    doc.setFont('Helvetica', 'normal');
+    doc.text('Gestion & Facturation Auto-Entreprise', 20, 32);
+  }
   
   doc.setTextColor(255, 255, 255);
   doc.setFontSize(20);
