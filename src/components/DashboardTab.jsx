@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { Icons } from './Icons';
 
 export default function DashboardTab({
@@ -10,7 +10,8 @@ export default function DashboardTab({
   totalExpenses,
   totalUrssaf,
   netProfit,
-  monthlyCA,
+  monthlyFinancials,
+  expensesCategoryData,
   breakdown,
   top10Invoices,
   top5Clients,
@@ -19,6 +20,16 @@ export default function DashboardTab({
   handleOpenSendEmail,
   handleExportPDF
 }) {
+  const [rightTab, setRightTab] = useState('activity'); // 'activity' or 'expenses'
+
+  // Scale Y coordinates helper
+  const getY = (val) => {
+    const range = monthlyFinancials.maxVal - monthlyFinancials.minVal;
+    if (range === 0) return 230; // Fallback
+    const ratio = (val - monthlyFinancials.minVal) / range;
+    return 230 - (ratio * 200);
+  };
+
   return (
     <div>
       <div className="page-header">
@@ -91,70 +102,162 @@ export default function DashboardTab({
 
       {/* Detailed Analytics Panel */}
       <div className="dashboard-details-grid" style={{ marginBottom: '2rem' }}>
-        {/* SVG CA Evolution Chart */}
+        {/* SVG CA & Profit Evolution Chart */}
         <div className="card-glass">
-          <h3 style={{ fontFamily: 'var(--font-title)', marginBottom: '1.25rem' }}>Évolution du Chiffre d'Affaires HT ({new Date().getFullYear()})</h3>
+          <h3 style={{ fontFamily: 'var(--font-title)', marginBottom: '0.75rem' }}>Suivi CA vs Bénéfice Net ({new Date().getFullYear()})</h3>
+          
+          <div style={{ display: 'flex', gap: '1.5rem', justifyContent: 'center', marginBottom: '1rem', fontSize: '0.8rem' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ display: 'inline-block', width: '12px', height: '12px', backgroundColor: 'var(--color-gold)', borderRadius: '2px' }}></span>
+              <span>Chiffre d'Affaires HT</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+              <span style={{ display: 'inline-block', width: '12px', height: '12px', backgroundColor: '#10B981', borderRadius: '2px' }}></span>
+              <span>Bénéfice Net Réel</span>
+            </div>
+          </div>
+
           <div style={{ position: 'relative', width: '100%', height: '320px' }}>
             <svg width="100%" height="100%" viewBox="0 0 600 280" preserveAspectRatio="none">
               <defs>
-                <linearGradient id="chart-gradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="var(--color-gold)" stopOpacity="0.3" />
+                <linearGradient id="ca-gradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="var(--color-gold)" stopOpacity="0.25" />
                   <stop offset="100%" stopColor="var(--color-gold)" stopOpacity="0.0" />
+                </linearGradient>
+                <linearGradient id="profit-gradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor="#10B981" stopOpacity="0.25" />
+                  <stop offset="100%" stopColor="#10B981" stopOpacity="0.0" />
                 </linearGradient>
               </defs>
 
               {/* Horizontal Grid Lines */}
-              {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => (
-                <line
-                  key={idx}
-                  x1="30"
-                  y1={30 + ratio * 200}
-                  x2="570"
-                  y2={30 + ratio * 200}
-                  className="chart-grid-line"
-                />
-              ))}
+              {[0, 0.25, 0.5, 0.75, 1].map((ratio, idx) => {
+                const val = monthlyFinancials.minVal + ratio * (monthlyFinancials.maxVal - monthlyFinancials.minVal);
+                const y = getY(val);
+                return (
+                  <g key={idx}>
+                    <line
+                      x1="45"
+                      y1={y}
+                      x2="570"
+                      y2={y}
+                      className="chart-grid-line"
+                    />
+                    <text
+                      x="40"
+                      y={y + 3}
+                      textAnchor="end"
+                      fill="var(--text-muted)"
+                      fontSize="8"
+                      fontFamily="monospace"
+                    >
+                      {Math.round(val)}
+                    </text>
+                  </g>
+                );
+              })}
 
-              {/* Chart Area and Line path */}
+              {/* Chart Lines and Areas */}
               {(() => {
-                const points = monthlyCA.values.map((val, idx) => {
-                  const x = 50 + idx * 46;
-                  const y = 230 - (val / monthlyCA.maxVal) * 200;
+                const caPoints = monthlyFinancials.caValues.map((val, idx) => {
+                  const x = 60 + idx * 45;
+                  const y = getY(val);
                   return { x, y };
                 });
 
-                const pathD = points.reduce((acc, p, idx) => 
+                const profitPoints = monthlyFinancials.profitValues.map((val, idx) => {
+                  const x = 60 + idx * 45;
+                  const y = getY(val);
+                  return { x, y };
+                });
+
+                const caPath = caPoints.reduce((acc, p, idx) => 
                   idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, ''
                 );
 
-                const areaD = points.length > 0 
-                  ? `${pathD} L ${points[points.length-1].x} 230 L ${points[0].x} 230 Z` 
+                const profitPath = profitPoints.reduce((acc, p, idx) => 
+                  idx === 0 ? `M ${p.x} ${p.y}` : `${acc} L ${p.x} ${p.y}`, ''
+                );
+
+                const caArea = caPoints.length > 0 
+                  ? `${caPath} L ${caPoints[caPoints.length-1].x} ${getY(0)} L ${caPoints[0].x} ${getY(0)} Z` 
+                  : '';
+
+                const profitArea = profitPoints.length > 0 
+                  ? `${profitPath} L ${profitPoints[profitPoints.length-1].x} ${getY(0)} L ${profitPoints[0].x} ${getY(0)} Z` 
                   : '';
 
                 return (
                   <>
-                    <path d={areaD} className="chart-area" />
-                    <path d={pathD} className="chart-line" />
+                    {/* Areas */}
+                    <path d={caArea} fill="url(#ca-gradient)" />
+                    <path d={profitArea} fill="url(#profit-gradient)" />
+
+                    {/* Zero Line */}
+                    {monthlyFinancials.minVal < 0 && (
+                      <line
+                        x1="45"
+                        y1={getY(0)}
+                        x2="570"
+                        y2={getY(0)}
+                        stroke="#EF4444"
+                        strokeDasharray="4 4"
+                        strokeWidth="1.5"
+                        opacity="0.6"
+                      />
+                    )}
+
+                    {/* Lines */}
+                    <path d={caPath} fill="none" stroke="var(--color-gold)" strokeWidth="2" />
+                    <path d={profitPath} fill="none" stroke="#10B981" strokeWidth="2" />
                     
-                    {/* Data points */}
-                    {points.map((p, idx) => (
-                      <g key={idx}>
+                    {/* CA Dots */}
+                    {caPoints.map((p, idx) => (
+                      <g key={`ca-${idx}`}>
                         <circle
                           cx={p.x}
                           cy={p.y}
-                          r="4.5"
-                          className="chart-dot"
+                          r="3.5"
+                          fill="var(--bg-primary)"
+                          stroke="var(--color-gold)"
+                          strokeWidth="1.5"
                         />
-                        {monthlyCA.values[idx] > 0 && (
+                        {monthlyFinancials.caValues[idx] > 0 && (
                           <text
                             x={p.x}
-                            y={p.y - 12}
+                            y={p.y - 8}
                             textAnchor="middle"
                             fill="var(--text-primary)"
-                            fontSize="9"
+                            fontSize="8"
                             fontWeight="600"
                           >
-                            {Math.round(monthlyCA.values[idx])}€
+                            {Math.round(monthlyFinancials.caValues[idx])}
+                          </text>
+                        )}
+                      </g>
+                    ))}
+
+                    {/* Profit Dots */}
+                    {profitPoints.map((p, idx) => (
+                      <g key={`profit-${idx}`}>
+                        <circle
+                          cx={p.x}
+                          cy={p.y}
+                          r="3.5"
+                          fill="var(--bg-primary)"
+                          stroke="#10B981"
+                          strokeWidth="1.5"
+                        />
+                        {Math.abs(monthlyFinancials.profitValues[idx]) > 0 && (
+                          <text
+                            x={p.x}
+                            y={monthlyFinancials.profitValues[idx] >= 0 ? p.y - 8 : p.y + 12}
+                            textAnchor="middle"
+                            fill="#10B981"
+                            fontSize="8"
+                            fontWeight="600"
+                          >
+                            {Math.round(monthlyFinancials.profitValues[idx])}
                           </text>
                         )}
                       </g>
@@ -164,10 +267,10 @@ export default function DashboardTab({
               })()}
 
               {/* X-Axis Labels */}
-              {monthlyCA.labels.map((label, idx) => (
+              {monthlyFinancials.labels.map((label, idx) => (
                 <text
                   key={idx}
-                  x={50 + idx * 46}
+                  x={60 + idx * 45}
                   y="255"
                   textAnchor="middle"
                   className="chart-label"
@@ -179,45 +282,101 @@ export default function DashboardTab({
           </div>
         </div>
 
-        {/* Service Types Breakdown */}
+        {/* Breakdown Panel (Tabs between Activity Types and Expenses Category Breakdown) */}
         <div className="card-glass flex-between" style={{ flexDirection: 'column', alignItems: 'stretch' }}>
-          <h3 style={{ fontFamily: 'var(--font-title)', marginBottom: '1.5rem' }}>Types d'activité</h3>
-          <div style={{ flexGrow: 1, display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1.25rem' }}>
-            
-            {/* Category BNC */}
-            <div>
-              <div className="flex-between" style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-                <span style={{ fontWeight: 500 }}>Libérale (BNC)</span>
-                <span style={{ color: 'var(--color-gold)', fontWeight: 600 }}>{breakdown.bnc.toFixed(1)}%</span>
-              </div>
-              <div style={{ height: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ width: `${breakdown.bnc}%`, height: '100%', backgroundColor: 'var(--color-gold)', borderRadius: '4px' }}></div>
-              </div>
-            </div>
-
-            {/* Category BIC Service */}
-            <div>
-              <div className="flex-between" style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-                <span style={{ fontWeight: 500 }}>Artisanale/Comm. (BIC)</span>
-                <span style={{ color: 'var(--color-blue)', fontWeight: 600 }}>{breakdown.bic.toFixed(1)}%</span>
-              </div>
-              <div style={{ height: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ width: `${breakdown.bic}%`, height: '100%', backgroundColor: 'var(--color-blue)', borderRadius: '4px' }}></div>
-              </div>
-            </div>
-
-            {/* Category BIC Vente */}
-            <div>
-              <div className="flex-between" style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
-                <span style={{ fontWeight: 500 }}>Vente Marchandises</span>
-                <span style={{ color: 'var(--success)', fontWeight: 600 }}>{breakdown.vente.toFixed(1)}%</span>
-              </div>
-              <div style={{ height: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
-                <div style={{ width: `${breakdown.vente}%`, height: '100%', backgroundColor: 'var(--success)', borderRadius: '4px' }}></div>
-              </div>
-            </div>
-
+          <div style={{ display: 'flex', borderBottom: '1px solid var(--border-glass)', marginBottom: '1.25rem', paddingBottom: '0.5rem', gap: '0.5rem' }}>
+            <button 
+              type="button"
+              style={{ 
+                background: 'none', 
+                border: 'none', 
+                color: rightTab === 'activity' ? 'var(--color-gold)' : 'var(--text-muted)', 
+                fontWeight: 600, 
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                padding: '0.25rem 0.5rem',
+                borderBottom: rightTab === 'activity' ? '2px solid var(--color-gold)' : 'none',
+                outline: 'none'
+              }}
+              onClick={() => setRightTab('activity')}
+            >
+              Activités
+            </button>
+            <button 
+              type="button"
+              style={{ 
+                background: 'none', 
+                border: 'none', 
+                color: rightTab === 'expenses' ? 'var(--color-gold)' : 'var(--text-muted)', 
+                fontWeight: 600, 
+                fontSize: '0.9rem',
+                cursor: 'pointer',
+                padding: '0.25rem 0.5rem',
+                borderBottom: rightTab === 'expenses' ? '2px solid var(--color-gold)' : 'none',
+                outline: 'none'
+              }}
+              onClick={() => setRightTab('expenses')}
+            >
+              Dépenses par catégorie
+            </button>
           </div>
+
+          {rightTab === 'activity' ? (
+            <div style={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', gap: '1.25rem', flexGrow: 1 }}>
+              {/* Category BNC */}
+              <div>
+                <div className="flex-between" style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
+                  <span style={{ fontWeight: 500 }}>Libérale (BNC)</span>
+                  <span style={{ color: 'var(--color-gold)', fontWeight: 600 }}>{breakdown.bnc.toFixed(1)}%</span>
+                </div>
+                <div style={{ height: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${breakdown.bnc}%`, height: '100%', backgroundColor: 'var(--color-gold)', borderRadius: '4px' }}></div>
+                </div>
+              </div>
+
+              {/* Category BIC Service */}
+              <div>
+                <div className="flex-between" style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
+                  <span style={{ fontWeight: 500 }}>Artisanale/Comm. (BIC)</span>
+                  <span style={{ color: 'var(--color-blue)', fontWeight: 600 }}>{breakdown.bic.toFixed(1)}%</span>
+                </div>
+                <div style={{ height: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${breakdown.bic}%`, height: '100%', backgroundColor: 'var(--color-blue)', borderRadius: '4px' }}></div>
+                </div>
+              </div>
+
+              {/* Category BIC Vente */}
+              <div>
+                <div className="flex-between" style={{ fontSize: '0.85rem', marginBottom: '0.4rem' }}>
+                  <span style={{ fontWeight: 500 }}>Vente Marchandises</span>
+                  <span style={{ color: 'var(--success)', fontWeight: 600 }}>{breakdown.vente.toFixed(1)}%</span>
+                </div>
+                <div style={{ height: '8px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '4px', overflow: 'hidden' }}>
+                  <div style={{ width: `${breakdown.vente}%`, height: '100%', backgroundColor: 'var(--success)', borderRadius: '4px' }}></div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.85rem', flexGrow: 1, overflowY: 'auto', maxHeight: '200px', paddingRight: '4px' }}>
+              {expensesCategoryData.list.length === 0 ? (
+                <div style={{ textAlign: 'center', color: 'var(--text-muted)', fontSize: '0.85rem', padding: '2rem 0' }}>
+                  Aucune dépense enregistrée pour le moment.
+                </div>
+              ) : (
+                expensesCategoryData.list.map(item => (
+                  <div key={item.key}>
+                    <div className="flex-between" style={{ fontSize: '0.85rem', marginBottom: '0.3rem' }}>
+                      <span style={{ fontWeight: 500 }}>{item.label}</span>
+                      <span style={{ color: 'var(--color-gold)', fontWeight: 600 }}>{item.amount.toFixed(2)} € ({item.pct.toFixed(1)}%)</span>
+                    </div>
+                    <div style={{ height: '6px', backgroundColor: 'var(--bg-tertiary)', borderRadius: '3px', overflow: 'hidden' }}>
+                      <div style={{ width: `${item.pct}%`, height: '100%', backgroundColor: 'var(--color-gold)', borderRadius: '3px' }}></div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          )}
         </div>
       </div>
 

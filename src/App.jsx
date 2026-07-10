@@ -32,7 +32,10 @@ const defaultSettings = {
   smtpPass: '',
   smtpSecure: 'none',
   customColor: '#E5A93C',
-  logoBase64: ''
+  logoBase64: '',
+  emailTemplateInvoice: "Bonjour {clientName},\n\nVeuillez trouver ci-joint la facture {documentNumber} pour la prestation : {description}.\n\nLe montant total est de {amountTotal} €.\n\nCordialement,\n\n{senderName}\n{senderCompany}",
+  emailTemplateEstimate: "Bonjour {clientName},\n\nVeuillez trouver ci-joint le devis {documentNumber} pour la prestation : {description}.\n\nLe montant total est de {amountTotal} €.\n\nCordialement,\n\n{senderName}\n{senderCompany}",
+  emailTemplateReminder: "Bonjour {clientName},\n\nSauf erreur ou omission de notre part, nous n'avons pas reçu le règlement de la facture {documentNumber} d'un montant de {amountTotal} € envoyée le {documentDate}.\n\nNous vous prions de bien vouloir régulariser cette situation dans les plus brefs délais. Vous trouverez la facture en pièce jointe.\n\nCordialement,\n\n{senderName}\n{senderCompany}"
 };
 
 // Regex declarations
@@ -604,18 +607,61 @@ export default function App() {
     );
   };
 
+  const resolveTemplate = (template, data) => {
+    if (!template) return '';
+    return template
+      .replace(/{clientName}/g, data.clientName || '')
+      .replace(/{documentNumber}/g, data.documentNumber || '')
+      .replace(/{description}/g, data.description || '')
+      .replace(/{amountTotal}/g, data.amountTotal || '')
+      .replace(/{dueDate}/g, data.dueDate || '')
+      .replace(/{documentDate}/g, data.documentDate || '')
+      .replace(/{senderName}/g, data.senderName || '')
+      .replace(/{senderCompany}/g, data.senderCompany || '');
+  };
+
   const handleOpenSendEmail = async (invoice, type = 'invoice') => {
     // Get client email
     let client = await db.clients.get(invoice.clientId);
     const toEmail = client ? client.email : '';
     const isInvoice = type === 'invoice';
-    const num = isInvoice ? invoice.invoiceNumber : invoice.estimateNumber;
-    const docName = isInvoice ? 'la facture' : 'le devis';
+    const isReminder = type === 'reminder';
+    
+    const num = isInvoice || isReminder ? invoice.invoiceNumber : invoice.estimateNumber;
+    const clientName = client ? client.companyName : '';
+    
+    // Select template
+    let template = '';
+    let subject = '';
+    
+    if (isInvoice) {
+      template = businessSettings.emailTemplateInvoice || defaultSettings.emailTemplateInvoice;
+      subject = `Facture ${num} - ${businessSettings.companyName}`;
+    } else if (isReminder) {
+      template = businessSettings.emailTemplateReminder || defaultSettings.emailTemplateReminder;
+      subject = `Rappel : Facture impayée ${num} - ${businessSettings.companyName}`;
+    } else {
+      template = businessSettings.emailTemplateEstimate || defaultSettings.emailTemplateEstimate;
+      subject = `Devis ${num} - ${businessSettings.companyName}`;
+    }
+    
+    const data = {
+      clientName: clientName,
+      documentNumber: num,
+      description: invoice.description || '',
+      amountTotal: invoice.amountTotal.toFixed(2),
+      dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('fr-FR') : '',
+      documentDate: invoice.date ? new Date(invoice.date).toLocaleDateString('fr-FR') : '',
+      senderName: businessSettings.contactName,
+      senderCompany: businessSettings.companyName
+    };
+    
+    const text = resolveTemplate(template, data);
     
     setEmailForm({
       to: toEmail,
-      subject: `${isInvoice ? 'Facture' : 'Devis'} ${num} - ${businessSettings.companyName}`,
-      text: `Bonjour,\n\nVeuillez trouver ci-joint ${docName} ${num} pour la prestation : ${invoice.description}.\n\nLe montant total est de ${invoice.amountTotal.toFixed(2)} €.\n\nCordialement,\n\n${businessSettings.contactName}\n${businessSettings.companyName}`,
+      subject: subject,
+      text: text,
       invoice: invoice,
       type: type
     });
@@ -639,7 +685,7 @@ export default function App() {
 
     try {
       const invoice = emailForm.invoice;
-      const isInvoice = emailForm.type === 'invoice';
+      const isInvoice = emailForm.type === 'invoice' || emailForm.type === 'reminder';
       let client = await db.clients.get(invoice.clientId);
       if (!client) {
         client = {
@@ -1089,27 +1135,112 @@ export default function App() {
     };
   };
 
-  const getMonthlyCAData = () => {
-    // Generate data for past 6 months to display in SVG chart
+  const getMonthlyFinancialsData = () => {
     const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
     const currentYear = new Date().getFullYear();
     
-    // Initialize monthly values
     const caPerMonth = Array(12).fill(0);
+    const expensesPerMonth = Array(12).fill(0);
+    const chargesPerMonth = Array(12).fill(0);
+    const profitPerMonth = Array(12).fill(0);
     
+    // 1. Calculate CA & theoretical URSSAF charges per month
     invoices.forEach(inv => {
       if (inv.status === 'brouillon') return;
       const invDate = new Date(inv.date);
       if (invDate.getFullYear() === currentYear) {
         const monthIndex = invDate.getMonth();
         caPerMonth[monthIndex] += inv.amountHt;
+        
+        // Calculate URSSAF charge rate for this invoice
+        let rate = 0;
+        if (inv.serviceType === 'service_bnc') {
+          rate = businessSettings.urssafServiceBnc;
+        } else if (inv.serviceType === 'service_bic') {
+          rate = businessSettings.urssafServiceBic;
+        } else if (inv.serviceType === 'vente') {
+          rate = businessSettings.urssafVente;
+        }
+        if (businessSettings.acreEnabled) {
+          rate = rate / 2;
+        }
+        chargesPerMonth[monthIndex] += (inv.amountHt * rate) / 100;
       }
     });
-
+    
+    // 2. Calculate expenses per month
+    expenses.forEach(exp => {
+      const expDate = new Date(exp.date);
+      if (expDate.getFullYear() === currentYear) {
+        const monthIndex = expDate.getMonth();
+        expensesPerMonth[monthIndex] += exp.amount;
+      }
+    });
+    
+    // 3. Calculate profit per month
+    for (let i = 0; i < 12; i++) {
+      profitPerMonth[i] = caPerMonth[i] - expensesPerMonth[i] - chargesPerMonth[i];
+    }
+    
+    const allValues = [...caPerMonth, ...profitPerMonth];
+    const maxVal = Math.max(...allValues, 1000) * 1.15;
+    const minVal = Math.min(...allValues, 0) * 1.15; // Support negative profit
+    
     return {
       labels: months,
-      values: caPerMonth,
-      maxVal: Math.max(...caPerMonth, 1000) * 1.15 // Avoid divide by zero, min scale 1000, add 15% padding
+      caValues: caPerMonth,
+      profitValues: profitPerMonth,
+      maxVal,
+      minVal
+    };
+  };
+
+  const getExpensesCategoryData = () => {
+    const categories = {
+      "Achats": 0,
+      "Déplacements": 0,
+      "Logiciels": 0,
+      "Télécoms": 0,
+      "Bureautique": 0,
+      "Cotisations": 0,
+      "Autre": 0
+    };
+    
+    const categoryLabels = {
+      "Achats": "Achats",
+      "Déplacements": "Déplacements",
+      "Logiciels": "Logiciels",
+      "Télécoms": "Télécoms",
+      "Bureautique": "Bureautique",
+      "Cotisations": "Cotisations",
+      "Autre": "Autre"
+    };
+
+    let total = 0;
+    expenses.forEach(exp => {
+      const cat = exp.category || 'Autre';
+      if (categories[cat] !== undefined) {
+        categories[cat] += exp.amount;
+      } else {
+        categories["Autre"] += exp.amount;
+      }
+      total += exp.amount;
+    });
+
+    const list = Object.keys(categories).map(key => {
+      const amount = categories[key];
+      const pct = total > 0 ? (amount / total) * 100 : 0;
+      return {
+        key,
+        label: categoryLabels[key] || key,
+        amount,
+        pct
+      };
+    }).filter(item => item.amount > 0); // Only keep categories with expenses
+
+    return {
+      total,
+      list
     };
   };
 
@@ -1118,7 +1249,8 @@ export default function App() {
   const totalExpenses = calculateTotalExpenses();
   const netProfit = totalCaHt - totalUrssaf - totalExpenses;
   const breakdown = getServiceTypeBreakdown();
-  const monthlyCA = getMonthlyCAData();
+  const monthlyFinancials = getMonthlyFinancialsData();
+  const expensesCategoryData = getExpensesCategoryData();
 
   // Calculate annual CA by category for current year to check thresholds
   const currentYearForThresholds = new Date().getFullYear();
@@ -1219,7 +1351,8 @@ export default function App() {
             totalExpenses={totalExpenses}
             totalUrssaf={totalUrssaf}
             netProfit={netProfit}
-            monthlyCA={monthlyCA}
+            monthlyFinancials={monthlyFinancials}
+            expensesCategoryData={expensesCategoryData}
             breakdown={breakdown}
             top10Invoices={top10Invoices}
             top5Clients={top5Clients}

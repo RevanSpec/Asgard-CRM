@@ -296,6 +296,60 @@ export default function SettingsTab({
             </span>
           </div>
 
+          {/* Section : Email templates */}
+          <div className="settings-section" style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
+            <div className="settings-section-title">Modèles d'e-mails</div>
+            <p className="metric-subtext" style={{ marginBottom: '1.25rem', lineHeight: '1.5' }}>
+              Personnalisez les messages d'accompagnement envoyés par e-mail avec vos factures, devis et relances.
+            </p>
+            
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.25rem', marginBottom: '1.25rem' }}>
+              <div className="form-group">
+                <label className="form-label">Modèle : Envoi de Facture</label>
+                <textarea 
+                  className="form-input" 
+                  style={{ minHeight: '120px', resize: 'vertical', fontFamily: 'inherit' }}
+                  value={businessSettings.emailTemplateInvoice || ''}
+                  onChange={(e) => saveSettings({ ...businessSettings, emailTemplateInvoice: e.target.value })}
+                />
+              </div>
+              
+              <div className="form-group">
+                <label className="form-label">Modèle : Envoi de Devis</label>
+                <textarea 
+                  className="form-input" 
+                  style={{ minHeight: '120px', resize: 'vertical', fontFamily: 'inherit' }}
+                  value={businessSettings.emailTemplateEstimate || ''}
+                  onChange={(e) => saveSettings({ ...businessSettings, emailTemplateEstimate: e.target.value })}
+                />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Modèle : Relance Facture Impayée</label>
+                <textarea 
+                  className="form-input" 
+                  style={{ minHeight: '120px', resize: 'vertical', fontFamily: 'inherit' }}
+                  value={businessSettings.emailTemplateReminder || ''}
+                  onChange={(e) => saveSettings({ ...businessSettings, emailTemplateReminder: e.target.value })}
+                />
+              </div>
+            </div>
+            
+            <div style={{ padding: '1rem', backgroundColor: 'rgba(229,169,60,0.03)', borderRadius: '8px', border: '1px dashed rgba(229,169,60,0.2)', fontSize: '0.8rem', lineHeight: '1.6' }}>
+              💡 <strong>Balises utilisables :</strong>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginTop: '0.5rem', fontFamily: 'monospace' }}>
+                <div>{"{clientName}"} : Nom du client</div>
+                <div>{"{documentNumber}"} : N° Facture / Devis</div>
+                <div>{"{amountTotal}"} : Montant TTC (€)</div>
+                <div>{"{dueDate}"} : Date d'échéance (factures)</div>
+                <div>{"{documentDate}"} : Date du document</div>
+                <div>{"{description}"} : Description du document</div>
+                <div>{"{senderName}"} : Votre nom</div>
+                <div>{"{senderCompany}"} : Votre entreprise</div>
+              </div>
+            </div>
+          </div>
+
           {/* Section : Sauvegarde et Restauration */}
           <div className="settings-section" style={{ borderTop: '1px solid var(--border-glass)', paddingTop: '1.5rem', marginTop: '1.5rem' }}>
             <div className="settings-section-title">Sécurité & Sauvegarde des données</div>

@@ -128,6 +128,16 @@ export default function InvoicesTab({
                             Régler
                           </button>
                         )}
+                        {inv.status === 'envoye' && (
+                          <button 
+                            className="btn btn-secondary"
+                            style={{ padding: '0.4rem 0.75rem', fontSize: '0.8rem', border: '1px solid var(--color-gold)', color: 'var(--color-gold)' }}
+                            title="Envoyer un rappel de paiement par e-mail"
+                            onClick={() => handleOpenSendEmail(inv, 'reminder')}
+                          >
+                            Relancer
+                          </button>
+                        )}
                         <button 
                           className="btn btn-secondary btn-icon-only" 
                           title="Envoyer par e-mail"
