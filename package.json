@@ -6,7 +6,7 @@
   "main": "main.js",
   "scripts": {
     "dev:vite": "vite",
-    "dev:electron": "electron .",
+    "dev:electron": "electron . --no-sandbox",
     "dev": "concurrently \"npm run dev:vite\" \"npm run dev:electron\"",
     "build": "vite build",
     "lint": "oxlint",
