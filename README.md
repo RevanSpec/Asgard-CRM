@@ -82,6 +82,7 @@
    ```bash
    npm run dist
    ```
+   *À utiliser systématiquement : `cargo build --release` ne régénère pas le frontend et produit un binaire qui cherche le serveur de développement. La compilation est désormais refusée dans ce cas, avec un message explicite.*
 
 ### Tests
 

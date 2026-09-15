@@ -33,10 +33,6 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 
 thiserror = "2"
 
-[features]
-# Utilisé par `tauri build --debug` pour conserver les symboles de débogage.
-default = []
-
 [profile.release]
 panic = "abort"
 codegen-units = 1
