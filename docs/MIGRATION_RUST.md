@@ -159,6 +159,18 @@ Le frontend n'est pas touché. Seuls le shell et les deux IPC changent.
 - Le mot de passe ne traverse plus la frontière IPC : `send_email` et `test_smtp` le lisent eux-mêmes dans le trousseau. Le champ `pass` reste accepté pour le seul bouton « Tester la connexion », qui doit pouvoir valider des identifiants avant enregistrement.
 - **À vérifier manuellement sur l'application empaquetée** : l'export CSV du livre des recettes et l'export de sauvegarde passent par un `<a download>` pointant sur un `blob:` et un `data:` URI. La CSP de Tauri est plus stricte que celle d'Electron et ces chemins n'ont pas pu être testés dans l'environnement de développement. Ils deviennent de toute façon des opérations de fichier côté Rust en phase 2, où la gestion de fichiers a sa place.
 
+**Mesures relevées sur la compilation release :**
+
+| | Avant (estimé) | Après (mesuré) |
+|---|---|---|
+| Installeur | ~220 Mo | **1,82 Mo** |
+| Binaire applicatif | — | 4,22 Mo |
+| Processus hôte au repos | ~200 Mo | 30 Mo |
+
+L'installeur est aussi léger parce que Tauri n'embarque pas WebView2 : il utilise le mode `downloadBootstrapper`, qui le télécharge à l'installation s'il est absent. WebView2 est présent d'origine depuis Windows 10 21H2, mais **une machine plus ancienne et hors ligne ne pourra pas installer l'application**. Passer `webviewInstallMode` en `embedBootstrapper` ou `offlineInstaller` corrige cela au prix de la taille — décision à prendre selon le public visé.
+
+Les 30 Mo ne couvrent que le processus hôte : les processus WebView2 enfants n'ont pas pu être attribués proprement sur la machine de test, où d'autres applications utilisent le même moteur. Le total réel est supérieur, tout en restant très en deçà d'Electron, puisque le moteur est partagé avec le système au lieu d'être embarqué.
+
 ### Phase 2 — IndexedDB vers SQLite *(5-7 j)*
 
 1. Schéma SQL : montants en **centimes (`INTEGER`)**, `deleted_at TEXT NULL`, table `document_sequences(kind, year, next_value)`, index sur `(payment_date)` et `(client_id)`. Migrations versionnées `sqlx::migrate!`.
