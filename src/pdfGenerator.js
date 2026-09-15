@@ -23,9 +23,13 @@ function hexToRgb(hex) {
  * @param {object} docData - The invoice or estimate data
  * @param {object} client - The client data
  * @param {object} businessSettings - The user's company/business settings
+ * @param {Date} [generatedAt] - Date d'édition imprimée en pied de page.
+ *   Injectable pour que les PDF de référence de la phase 0 soient reproductibles :
+ *   sans cela, régénérer la référence produit des octets différents chaque jour
+ *   et la comparaison visuelle de la phase 4 n'a plus de point fixe.
  * @returns {jsPDF} The generated jsPDF document instance
  */
-export function generateDocumentPDF(type, docData, client, businessSettings) {
+export function generateDocumentPDF(type, docData, client, businessSettings, generatedAt = new Date()) {
   const doc = new jsPDF({
     orientation: 'portrait',
     unit: 'mm',
@@ -217,7 +221,7 @@ export function generateDocumentPDF(type, docData, client, businessSettings) {
   doc.line(20, 260, pageWidth - 20, 260);
   doc.setFontSize(7);
   doc.setTextColor(...greyColor);
-  doc.text(`${isInvoice ? 'Facture' : 'Devis'} généré automatiquement via Asgard CRM le ${new Date().toLocaleDateString('fr-FR')}`, pageWidth / 2, 267, { align: 'center' });
+  doc.text(`${isInvoice ? 'Facture' : 'Devis'} généré automatiquement via Asgard CRM le ${generatedAt.toLocaleDateString('fr-FR')}`, pageWidth / 2, 267, { align: 'center' });
 
   return doc;
 }
@@ -225,15 +229,15 @@ export function generateDocumentPDF(type, docData, client, businessSettings) {
 /**
  * Generates the jsPDF instance for an invoice.
  */
-export function generateInvoicePDF(invoice, client, businessSettings) {
-  return generateDocumentPDF('invoice', invoice, client, businessSettings);
+export function generateInvoicePDF(invoice, client, businessSettings, generatedAt) {
+  return generateDocumentPDF('invoice', invoice, client, businessSettings, generatedAt);
 }
 
 /**
  * Generates the jsPDF instance for an estimate.
  */
-export function generateEstimatePDF(estimate, client, businessSettings) {
-  return generateDocumentPDF('estimate', estimate, client, businessSettings);
+export function generateEstimatePDF(estimate, client, businessSettings, generatedAt) {
+  return generateDocumentPDF('estimate', estimate, client, businessSettings, generatedAt);
 }
 
 /**
