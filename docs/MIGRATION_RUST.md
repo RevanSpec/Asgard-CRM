@@ -72,7 +72,9 @@ Classés par gravité. La migration est l'occasion de les traiter : plusieurs di
 
 ### Mineur
 
-**D9 — Dépendance morte.** `html2canvas` (1.4.1) est déclarée mais n'est utilisée nulle part.
+**D9 — Dépendance déclarée en double.** `html2canvas` (1.4.1) figure dans les dépendances directes alors qu'elle n'est importée nulle part dans `src/` ni dans `main.js`.
+
+*Précision apportée par la phase 0* : la retirer du `package.json` ne la retire pas du bundle. `jspdf` la déclare comme sa propre dépendance et Vite continue de l'empaqueter (199 Ko). La déclaration directe était donc redondante, pas la bibliothèque : celle-ci ne disparaîtra qu'avec `jspdf`, en phase 4.
 
 **D10 — Poids.** Installeur Electron ≈ 200-250 Mo, ~200 Mo de RSS au repos, ~2 s de démarrage à froid.
 
@@ -112,9 +114,13 @@ asgard-crm/
 
 ## 4. Plan de migration
 
-### Phase 0 — Filet de sécurité *(3-4 j, aucun Rust)*
+### Phase 0 — Filet de sécurité *(3-4 j, aucun Rust)* ✅ **livrée**
 
 Sans tests, toute migration est une réécriture à l'aveugle. Cette phase produit l'oracle.
+
+> **Livré** — 7 modules dans `src/domain/`, 151 golden tests, jeu de référence et
+> 22 PDF archivés. `App.jsx` passe de 2 060 à 1 748 lignes, `ComptaTab.jsx` de
+> 418 à 361. D7 et D9 corrigés. Voir [`src/domain/README.md`](../src/domain/README.md).
 
 1. Extraire la logique de `App.jsx` et `ComptaTab.jsx` vers `src/domain/*.js` (fonctions pures, sans React).
 2. Écrire des tests Vitest sur ces fonctions — ce sont les **golden tests** qui seront rejoués contre l'implémentation Rust en phase 3.
@@ -122,7 +128,9 @@ Sans tests, toute migration est une réécriture à l'aveugle. Cette phase produ
 4. Archiver les PDF produits par jsPDF sur ces fixtures — référence visuelle pour la phase 4.
 5. Corriger **D7**, supprimer **D9**.
 
-*Critère de sortie* : `npm test` vert, comportement actuel figé et documenté.
+*Critère de sortie* : `npm test` vert, comportement actuel figé et documenté. **Atteint.**
+
+Un point non anticipé est apparu : `pdfGenerator.js` imprimait `new Date()` en pied de page, et jsPDF horodate le PDF puis tire un identifiant de document aléatoire. Les PDF de référence changeaient donc à chaque génération. La date d'édition est devenue un paramètre injectable, l'horodatage est figé et l'identifiant normalisé — sans quoi la référence n'aurait été comparable à rien.
 
 ### Phase 1 — Remplacer la coquille Electron par Tauri *(5-7 j)*
 
@@ -215,7 +223,7 @@ Leptos 0.7 (CSR) ou Dioxus 0.6, CSS conservé à l'identique, types partagés de
 
 | Phase | Charge | Résout |
 |---|---|---|
-| 0 — Filet de sécurité | 3-4 j | D7, D9 |
+| 0 — Filet de sécurité ✅ | 3-4 j | D7, D9 |
 | 1 — Coquille Tauri | 5-7 j | D1, D2, D10 |
 | 2 — SQLite | 5-7 j | D4, D6 |
 | 3 — Noyau métier | 5-7 j | D3, D5, D8 |
