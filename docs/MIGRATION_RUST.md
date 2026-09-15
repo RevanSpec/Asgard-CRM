@@ -159,6 +159,10 @@ Le frontend n'est pas touché. Seuls le shell et les deux IPC changent.
 - Le mot de passe ne traverse plus la frontière IPC : `send_email` et `test_smtp` le lisent eux-mêmes dans le trousseau. Le champ `pass` reste accepté pour le seul bouton « Tester la connexion », qui doit pouvoir valider des identifiants avant enregistrement.
 - **À vérifier manuellement sur l'application empaquetée** : l'export CSV du livre des recettes et l'export de sauvegarde passent par un `<a download>` pointant sur un `blob:` et un `data:` URI. La CSP de Tauri est plus stricte que celle d'Electron et ces chemins n'ont pas pu être testés dans l'environnement de développement. Ils deviennent de toute façon des opérations de fichier côté Rust en phase 2, où la gestion de fichiers a sa place.
 
+**Piège rencontré après coup, corrigé :** un binaire compilé avec `cargo build --release` au lieu de `npm run dist` sert le frontend depuis `devUrl` et n'affiche qu'un « localhost a refusé de se connecter ». L'application se lance normalement, rien n'apparaît dans les journaux, et la seule différence visible est la taille — 3,88 Mo sans les fichiers embarqués contre 4,22 Mo avec. `build.rs` interrompt désormais la compilation dans ce cas, en détectant l'absence de `TAURI_CLI_VERBOSITY` (variable que seule la CLI renseigne) et en indiquant la commande à utiliser.
+
+**Leçon pour les phases suivantes :** vérifier qu'un processus démarre ne prouve rien sur ce qu'il affiche. Les binaires de bureau se vérifient en capturant la fenêtre.
+
 **Mesures relevées sur la compilation release :**
 
 | | Avant (estimé) | Après (mesuré) |

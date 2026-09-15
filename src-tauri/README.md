@@ -90,6 +90,25 @@ npm run dist    # installeur NSIS
 cargo test      # tests de l'hôte
 ```
 
+### ⚠️ Ne pas compiler avec `cargo build --release`
+
+Un binaire release doit être produit par la CLI Tauri, jamais par cargo seul.
+La CLI fait deux choses que `cargo build` ignore :
+
+1. elle exécute `beforeBuildCommand` (`npm run build`), qui régénère `dist/` ;
+2. elle indique à `tauri::generate_context!` d'embarquer ces fichiers plutôt
+   que de pointer sur `devUrl`.
+
+Un binaire compilé sans elle se lance normalement mais n'affiche qu'un
+**« localhost a refusé de se connecter »** — une panne silencieuse qui ressemble
+à un problème de réseau. Le symptôme est reconnaissable à la taille du binaire :
+3,88 Mo sans les assets contre 4,22 Mo avec.
+
+`build.rs` refuse désormais ce cas de figure plutôt que de produire un
+exécutable cassé : il détecte l'absence de `TAURI_CLI_VERBOSITY`, variable que
+seule la CLI Tauri renseigne, et interrompt la compilation avec un message
+indiquant la commande à utiliser.
+
 Pour travailler l'interface sans recompiler Rust, `npm run dev:vite` suffit :
 `isDesktop()` renvoie alors `false` et les fonctionnalités dépendant de l'hôte
 sont désactivées proprement au lieu de lever.
