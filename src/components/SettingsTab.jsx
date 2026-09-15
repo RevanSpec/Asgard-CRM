@@ -5,6 +5,10 @@ export default function SettingsTab({
   saveSettings,
   handleTestSMTP,
   smtpTesting,
+  smtpPassDraft,
+  setSmtpPassDraft,
+  smtpPassStored,
+  handleSaveSmtpPassword,
   handleExportBackup,
   handleImportBackup,
   showAlert
@@ -270,13 +274,31 @@ export default function SettingsTab({
               </div>
               <div className="form-group">
                 <label className="form-label">Mot de passe SMTP</label>
-                <input 
-                  type="password" 
-                  className="form-input" 
-                  placeholder="Mot de passe ou clé générée"
-                  value={businessSettings.smtpPass}
-                  onChange={(e) => saveSettings({ ...businessSettings, smtpPass: e.target.value })}
-                />
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <input
+                    id="smtp-password"
+                    type="password"
+                    className="form-input"
+                    placeholder={smtpPassStored ? 'Enregistré — saisir pour remplacer' : 'Mot de passe ou clé générée'}
+                    value={smtpPassDraft}
+                    onChange={(e) => setSmtpPassDraft(e.target.value)}
+                    autoComplete="off"
+                  />
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={handleSaveSmtpPassword}
+                    disabled={!smtpPassDraft && !smtpPassStored}
+                    style={{ whiteSpace: 'nowrap' }}
+                  >
+                    {!smtpPassDraft && smtpPassStored ? 'Effacer' : 'Enregistrer'}
+                  </button>
+                </div>
+                <span className="metric-subtext" style={{ display: 'block', marginTop: '0.4rem', lineHeight: '1.4' }}>
+                  {smtpPassStored
+                    ? '🔐 Conservé dans le trousseau de votre système. Il ne figure ni dans les réglages, ni dans les sauvegardes.'
+                    : "🔐 Sera conservé dans le trousseau de votre système, et non dans les réglages."}
+                </span>
               </div>
               <div className="form-group">
                 <label className="form-label">Sécurité Connexion</label>

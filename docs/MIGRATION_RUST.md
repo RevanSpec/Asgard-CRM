@@ -132,9 +132,14 @@ Sans tests, toute migration est une réécriture à l'aveugle. Cette phase produ
 
 Un point non anticipé est apparu : `pdfGenerator.js` imprimait `new Date()` en pied de page, et jsPDF horodate le PDF puis tire un identifiant de document aléatoire. Les PDF de référence changeaient donc à chaque génération. La date d'édition est devenue un paramètre injectable, l'horodatage est figé et l'identifiant normalisé — sans quoi la référence n'aurait été comparable à rien.
 
-### Phase 1 — Remplacer la coquille Electron par Tauri *(5-7 j)*
+### Phase 1 — Remplacer la coquille Electron par Tauri *(5-7 j)* ✅ **livrée**
 
 Le frontend n'est pas touché. Seuls le shell et les deux IPC changent.
+
+> **Livré** — `src-tauri/` (hôte Rust), SMTP porté sur `lettre`, secrets dans le
+> trousseau de l'OS, `src/ipc.js` comme frontière unique. `main.js` supprimé ;
+> `electron`, `electron-builder`, `nodemailer` et `concurrently` retirés du
+> `package.json`.
 
 1. `cargo tauri init` ; `tauri.conf.json` pointe sur le serveur Vite en dev, sur `dist/` en production.
 2. Réimplémenter `send-email` et `test-smtp` en commandes Tauri avec **lettre 0.11**. Reproduire exactement la logique TLS de `main.js` :
@@ -147,6 +152,12 @@ Le frontend n'est pas touché. Seuls le shell et les deux IPC changent.
 6. Supprimer `electron`, `electron-builder`, `nodemailer`, `concurrently` du `package.json`.
 
 *Critère de sortie* : application fonctionnellement identique, installeur < 15 Mo, plus aucun module Node dans le renderer. **D1, D2, D10 résolus.**
+
+**Précisions apportées par l'exécution :**
+
+- La migration du secret ne se limite pas à « les nouvelles écritures vont dans le trousseau ». Les installations existantes ont le mot de passe en clair dans `localStorage`, et une sauvegarde d'avant la phase 1 le contient aussi. `stripSecret` est donc appliqué au chargement, à chaque enregistrement **et à l'import de sauvegarde**, et `migrateLegacySmtpPassword` déplace puis efface l'ancienne entrée au premier lancement. Sans ces trois points, D2 revenait par la porte de derrière.
+- Le mot de passe ne traverse plus la frontière IPC : `send_email` et `test_smtp` le lisent eux-mêmes dans le trousseau. Le champ `pass` reste accepté pour le seul bouton « Tester la connexion », qui doit pouvoir valider des identifiants avant enregistrement.
+- **À vérifier manuellement sur l'application empaquetée** : l'export CSV du livre des recettes et l'export de sauvegarde passent par un `<a download>` pointant sur un `blob:` et un `data:` URI. La CSP de Tauri est plus stricte que celle d'Electron et ces chemins n'ont pas pu être testés dans l'environnement de développement. Ils deviennent de toute façon des opérations de fichier côté Rust en phase 2, où la gestion de fichiers a sa place.
 
 ### Phase 2 — IndexedDB vers SQLite *(5-7 j)*
 
@@ -224,7 +235,7 @@ Leptos 0.7 (CSR) ou Dioxus 0.6, CSS conservé à l'identique, types partagés de
 | Phase | Charge | Résout |
 |---|---|---|
 | 0 — Filet de sécurité ✅ | 3-4 j | D7, D9 |
-| 1 — Coquille Tauri | 5-7 j | D1, D2, D10 |
+| 1 — Coquille Tauri ✅ | 5-7 j | D1, D2, D10 |
 | 2 — SQLite | 5-7 j | D4, D6 |
 | 3 — Noyau métier | 5-7 j | D3, D5, D8 |
 | 4 — PDF & e-mail | 4-6 j | — |

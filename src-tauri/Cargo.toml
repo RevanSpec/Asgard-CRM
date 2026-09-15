@@ -1,0 +1,45 @@
+[package]
+name = "asgard-crm"
+version = "0.1.0"
+description = "Asgard CRM — gestion et facturation pour micro-entrepreneurs"
+authors = ["Asgard CRM"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "asgard_crm_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# SMTP — remplace nodemailer (phase 1)
+lettre = { version = "0.11", default-features = false, features = [
+    "smtp-transport",
+    "builder",
+    "hostname",
+    "rustls-tls",
+    "rustls-platform-verifier",
+] }
+base64 = "0.22"
+
+# Trousseau de l'OS — sort le mot de passe SMTP de localStorage (défaut D2)
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+thiserror = "2"
+
+[features]
+# Utilisé par `tauri build --debug` pour conserver les symboles de débogage.
+default = []
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true
