@@ -1,4 +1,5 @@
 import Dexie from 'dexie';
+import { yearBounds, buildDocumentNumber } from './domain/numbering';
 
 export const db = new Dexie('AsgardCRMDatabase');
 
@@ -31,28 +32,14 @@ db.version(2).stores({
  * @returns {Promise<string>} The generated invoice number
  */
 export async function generateInvoiceNumber(companyName, dateStr) {
-  const sanitizedClient = companyName
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove accents
-    .replace(/[^A-Z0-9]/g, "") // Keep only alphanumeric
-    .substring(0, 10); // Keep max 10 characters for readability
-  
-  const year = new Date(dateStr).getFullYear().toString();
-  
-  // Parse year boundaries
-  const startOfYear = new Date(`${year}-01-01T00:00:00Z`).toISOString();
-  const endOfYear = new Date(`${year}-12-31T23:59:59Z`).toISOString();
-  
-  // Count how many invoices exist in the system for this year
+  const { start, end } = yearBounds(dateStr);
+
   const count = await db.invoices
     .where('date')
-    .between(startOfYear, endOfYear, true, true)
+    .between(start, end, true, true)
     .count();
-    
-  const sequence = (count + 1).toString().padStart(4, '0');
-  
-  return `FAC-${sanitizedClient}-${year}-${sequence}`;
+
+  return buildDocumentNumber('invoice', companyName, dateStr, count);
 }
 
 /**
@@ -62,28 +49,14 @@ export async function generateInvoiceNumber(companyName, dateStr) {
  * @returns {Promise<string>} The generated estimate number
  */
 export async function generateEstimateNumber(companyName, dateStr) {
-  const sanitizedClient = companyName
-    .toUpperCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "") // Remove accents
-    .replace(/[^A-Z0-9]/g, "") // Keep only alphanumeric
-    .substring(0, 10); // Keep max 10 characters for readability
-  
-  const year = new Date(dateStr).getFullYear().toString();
-  
-  // Parse year boundaries
-  const startOfYear = new Date(`${year}-01-01T00:00:00Z`).toISOString();
-  const endOfYear = new Date(`${year}-12-31T23:59:59Z`).toISOString();
-  
-  // Count how many estimates exist in the system for this year
+  const { start, end } = yearBounds(dateStr);
+
   const count = await db.estimates
     .where('date')
-    .between(startOfYear, endOfYear, true, true)
+    .between(start, end, true, true)
     .count();
-    
-  const sequence = (count + 1).toString().padStart(4, '0');
-  
-  return `DEV-${sanitizedClient}-${year}-${sequence}`;
+
+  return buildDocumentNumber('estimate', companyName, dateStr, count);
 }
 
 /**

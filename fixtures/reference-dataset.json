@@ -1,0 +1,344 @@
+{
+  "_comment": "Jeu de données de référence de la phase 0. Figé : ne pas modifier sans mettre à jour les golden tests, qui servent d'oracle à la réimplémentation Rust de la phase 3. Couvre les trois types d'activité, tous les statuts, les deux exercices 2025 et 2026, et des montants choisis pour exposer les artefacts de virgule flottante du défaut D5.",
+  "referenceYear": 2026,
+  "clients": [
+    {
+      "id": 1,
+      "companyName": "Stark Industries",
+      "contactName": "Pepper Potts",
+      "email": "pepper@stark.com",
+      "phone": "06 11 22 33 44",
+      "address": "108 route de Malibu, 75008 Paris",
+      "createdAt": "2025-11-10T00:00:00.000Z"
+    },
+    {
+      "id": 2,
+      "companyName": "Wayne Enterprises",
+      "contactName": "Lucius Fox",
+      "email": "lucius@wayne.com",
+      "phone": "07 88 99 00 11",
+      "address": "12 avenue de Gotham, 75016 Paris",
+      "createdAt": "2026-02-15T00:00:00.000Z"
+    },
+    {
+      "id": 3,
+      "companyName": "Asgard Coffee & Co",
+      "contactName": "Valkyrie",
+      "email": "valk@coffee.asgard",
+      "phone": "06 55 55 55 55",
+      "address": "45 rue du Bifrost, 75011 Paris",
+      "createdAt": "2026-03-20T00:00:00.000Z"
+    },
+    {
+      "id": 4,
+      "companyName": "Éditions Yggdrasil",
+      "contactName": "Heimdall",
+      "email": "contact@yggdrasil.fr",
+      "phone": "01 42 00 11 22",
+      "address": "3 place des Neuf Mondes, 75004 Paris",
+      "createdAt": "2026-04-02T00:00:00.000Z"
+    }
+  ],
+  "invoices": [
+    {
+      "id": 1,
+      "clientId": 1,
+      "companyName": "Stark Industries",
+      "invoiceNumber": "FAC-STARKINDUS-2025-0001",
+      "serviceType": "service_bnc",
+      "description": "Audit exercice précédent",
+      "amountHt": 5000,
+      "tvaRate": 20,
+      "amountTva": 1000,
+      "amountTotal": 6000,
+      "date": "2025-12-15T10:00:00.000Z",
+      "status": "payee",
+      "paymentDate": "2026-01-08T10:00:00.000Z",
+      "paymentMethod": "virement",
+      "_note": "Facture à cheval : émise en 2025, encaissée en 2026. Le graphe mensuel la classe en 2025 (date d'émission), la déclaration URSSAF et les seuils en 2026 (date d'encaissement)."
+    },
+    {
+      "id": 2,
+      "clientId": 1,
+      "companyName": "Stark Industries",
+      "invoiceNumber": "FAC-STARKINDUS-2026-0001",
+      "serviceType": "service_bnc",
+      "description": "Consulting en nanotechnologies",
+      "amountHt": 8100,
+      "tvaRate": 20,
+      "amountTva": 1620,
+      "amountTotal": 9720,
+      "date": "2026-02-05T10:00:00.000Z",
+      "status": "payee",
+      "paymentDate": "2026-02-20T10:00:00.000Z",
+      "paymentMethod": "virement"
+    },
+    {
+      "id": 3,
+      "clientId": 2,
+      "companyName": "Wayne Enterprises",
+      "invoiceNumber": "FAC-WAYNEENTER-2026-0002",
+      "serviceType": "service_bic",
+      "description": "Maintenance du système sonar",
+      "amountHt": 1899.99,
+      "tvaRate": 20,
+      "amountTva": 379.998,
+      "amountTotal": 2279.988,
+      "date": "2026-03-12T10:00:00.000Z",
+      "status": "payee",
+      "paymentDate": "2026-03-30T10:00:00.000Z",
+      "paymentMethod": "cheque",
+      "_note": "Montant non rond : expose l'accumulation d'arrondis du défaut D5."
+    },
+    {
+      "id": 4,
+      "clientId": 3,
+      "companyName": "Asgard Coffee & Co",
+      "invoiceNumber": "FAC-ASGARDCOFF-2026-0003",
+      "serviceType": "vente",
+      "description": "Grains de café d'Éthiopie, 40 kg",
+      "amountHt": 1450.35,
+      "tvaRate": 5.5,
+      "amountTva": 79.76925,
+      "amountTotal": 1530.11925,
+      "date": "2026-04-18T10:00:00.000Z",
+      "status": "payee",
+      "paymentDate": "2026-04-18T10:00:00.000Z",
+      "paymentMethod": "carte"
+    },
+    {
+      "id": 5,
+      "clientId": 4,
+      "companyName": "Éditions Yggdrasil",
+      "invoiceNumber": "FAC-EDITIONSYG-2026-0004",
+      "serviceType": "vente",
+      "description": "Réimpression du Codex Regius",
+      "amountHt": 3200,
+      "tvaRate": 5.5,
+      "amountTva": 176,
+      "amountTotal": 3376,
+      "date": "2026-05-06T10:00:00.000Z",
+      "status": "payee",
+      "paymentDate": "2026-07-02T10:00:00.000Z",
+      "paymentMethod": "especes",
+      "_note": "Encaissement au trimestre suivant l'émission : sépare T2 (émission) de T3 (déclaration)."
+    },
+    {
+      "id": 6,
+      "clientId": 2,
+      "companyName": "Wayne Enterprises",
+      "invoiceNumber": "FAC-WAYNEENTER-2026-0005",
+      "serviceType": "service_bnc",
+      "description": "Étude de sécurisation périmétrique",
+      "amountHt": 4750,
+      "tvaRate": 20,
+      "amountTva": 950,
+      "amountTotal": 5700,
+      "date": "2026-06-11T10:00:00.000Z",
+      "status": "envoyee",
+      "_note": "Émise et envoyée, non encaissée : comptée dans le CA facturé et dans le graphe mensuel, absente de l'encaissé et de la déclaration URSSAF."
+    },
+    {
+      "id": 7,
+      "clientId": 3,
+      "companyName": "Asgard Coffee & Co",
+      "invoiceNumber": "FAC-ASGARDCOFF-2026-0006",
+      "serviceType": "service_bic",
+      "description": "Formation barista, deux journées",
+      "amountHt": 1200,
+      "tvaRate": 0,
+      "amountTva": 0,
+      "amountTotal": 1200,
+      "date": "2026-08-22T10:00:00.000Z",
+      "status": "brouillon",
+      "_note": "Brouillon : exclu de tous les agrégats. Taux de TVA à 0 — déclenche la mention 293 B du CGI sur le PDF."
+    }
+  ],
+  "estimates": [
+    {
+      "id": 1,
+      "clientId": 1,
+      "companyName": "Stark Industries",
+      "estimateNumber": "DEV-STARKINDUS-2026-0001",
+      "serviceType": "service_bnc",
+      "description": "Refonte du réacteur ARC",
+      "amountHt": 24000,
+      "tvaRate": 20,
+      "amountTva": 4800,
+      "amountTotal": 28800,
+      "date": "2026-01-20T10:00:00.000Z",
+      "status": "accepte"
+    },
+    {
+      "id": 2,
+      "clientId": 4,
+      "companyName": "Éditions Yggdrasil",
+      "estimateNumber": "DEV-EDITIONSYG-2026-0002",
+      "serviceType": "vente",
+      "description": "Tirage de tête, 200 exemplaires",
+      "amountHt": 7400,
+      "tvaRate": 5.5,
+      "amountTva": 407,
+      "amountTotal": 7807,
+      "date": "2026-05-30T10:00:00.000Z",
+      "status": "envoye"
+    },
+    {
+      "id": 3,
+      "clientId": 2,
+      "companyName": "Wayne Enterprises",
+      "estimateNumber": "DEV-WAYNEENTER-2026-0003",
+      "serviceType": "service_bic",
+      "description": "Extension du réseau de capteurs",
+      "amountHt": 15600,
+      "tvaRate": 20,
+      "amountTva": 3120,
+      "amountTotal": 18720,
+      "date": "2026-06-14T10:00:00.000Z",
+      "status": "refuse"
+    },
+    {
+      "id": 4,
+      "clientId": 3,
+      "companyName": "Asgard Coffee & Co",
+      "estimateNumber": "DEV-ASGARDCOFF-2026-0004",
+      "serviceType": "vente",
+      "description": "Machine à torréfier d'occasion",
+      "amountHt": 5900,
+      "tvaRate": 20,
+      "amountTva": 1180,
+      "amountTotal": 7080,
+      "date": "2026-07-09T10:00:00.000Z",
+      "status": "brouillon"
+    }
+  ],
+  "expenses": [
+    {
+      "id": 1,
+      "date": "2026-01-15T00:00:00.000Z",
+      "merchant": "JetBrains",
+      "category": "Logiciels",
+      "amount": 289.9,
+      "description": "Licence annuelle",
+      "paymentMethod": "carte"
+    },
+    {
+      "id": 2,
+      "date": "2026-02-03T00:00:00.000Z",
+      "merchant": "SNCF Connect",
+      "category": "Déplacements",
+      "amount": 154.4,
+      "description": "Aller-retour Paris - Lyon",
+      "paymentMethod": "carte"
+    },
+    {
+      "id": 3,
+      "date": "2026-03-28T00:00:00.000Z",
+      "merchant": "Free Pro",
+      "category": "Télécoms",
+      "amount": 39.99,
+      "description": "Abonnement fibre, mars",
+      "paymentMethod": "virement"
+    },
+    {
+      "id": 4,
+      "date": "2026-04-11T00:00:00.000Z",
+      "merchant": "Torréfacteur du Nord",
+      "category": "Achats",
+      "amount": 820.5,
+      "description": "Café vert, 60 kg",
+      "paymentMethod": "virement"
+    },
+    {
+      "id": 5,
+      "date": "2026-06-20T00:00:00.000Z",
+      "merchant": "Bureau Vallée",
+      "category": "Bureautique",
+      "amount": 67.3,
+      "description": "Papeterie et cartouches",
+      "paymentMethod": "carte"
+    },
+    {
+      "id": 6,
+      "date": "2026-09-05T00:00:00.000Z",
+      "merchant": "Ordre des experts-comptables",
+      "category": "Cotisations",
+      "amount": 210,
+      "description": "Cotisation annuelle",
+      "paymentMethod": "virement"
+    },
+    {
+      "id": 7,
+      "date": "2026-10-02T00:00:00.000Z",
+      "merchant": "Brocante de Midgard",
+      "category": "Mobilier",
+      "amount": 145,
+      "description": "Étagère d'atelier",
+      "paymentMethod": "especes",
+      "_note": "Catégorie absente de la liste connue : doit basculer dans « Autre »."
+    },
+    {
+      "id": 8,
+      "date": "2025-12-28T00:00:00.000Z",
+      "merchant": "OVH",
+      "category": "Logiciels",
+      "amount": 119,
+      "description": "Nom de domaine, exercice précédent",
+      "paymentMethod": "carte",
+      "_note": "Exercice 2025 : exclu des agrégats 2026."
+    }
+  ],
+  "settings": {
+    "standard": {
+      "companyName": "Asgard Solutions",
+      "contactName": "Thor Odinson",
+      "email": "thor@asgard-solutions.fr",
+      "phone": "06 12 34 56 78",
+      "address": "1 rue du Valhalla, 75008 Paris",
+      "siret": "839 204 123 00019",
+      "iban": "FR76 3000 2000 0001 2345 6789 012",
+      "urssafServiceBnc": 21.1,
+      "urssafServiceBic": 21.1,
+      "urssafVente": 12.3,
+      "acreEnabled": false,
+      "customColor": "#E5A93C",
+      "logoBase64": ""
+    },
+    "acre": {
+      "companyName": "Asgard Solutions",
+      "contactName": "Thor Odinson",
+      "email": "thor@asgard-solutions.fr",
+      "phone": "06 12 34 56 78",
+      "address": "1 rue du Valhalla, 75008 Paris",
+      "siret": "839 204 123 00019",
+      "iban": "FR76 3000 2000 0001 2345 6789 012",
+      "urssafServiceBnc": 21.1,
+      "urssafServiceBic": 21.1,
+      "urssafVente": 12.3,
+      "acreEnabled": true,
+      "customColor": "#7C3AED",
+      "logoBase64": ""
+    }
+  },
+  "thresholdScenarios": {
+    "_comment": "Jeux réduits servant uniquement à déclencher chaque branche d'alerte de seuil. Une seule facture encaissée par scénario.",
+    "serviceApproachingTva": [
+      { "id": 100, "serviceType": "service_bnc", "amountHt": 35000, "amountTotal": 42000, "status": "payee", "date": "2026-03-01T10:00:00.000Z", "paymentDate": "2026-03-01T10:00:00.000Z" }
+    ],
+    "serviceExceededTva": [
+      { "id": 101, "serviceType": "service_bnc", "amountHt": 40000, "amountTotal": 48000, "status": "payee", "date": "2026-03-01T10:00:00.000Z", "paymentDate": "2026-03-01T10:00:00.000Z" }
+    ],
+    "serviceApproachingMicro": [
+      { "id": 102, "serviceType": "service_bnc", "amountHt": 72000, "amountTotal": 86400, "status": "payee", "date": "2026-03-01T10:00:00.000Z", "paymentDate": "2026-03-01T10:00:00.000Z" }
+    ],
+    "venteApproachingTva": [
+      { "id": 103, "serviceType": "vente", "amountHt": 88000, "amountTotal": 92840, "status": "payee", "date": "2026-03-01T10:00:00.000Z", "paymentDate": "2026-03-01T10:00:00.000Z" }
+    ],
+    "venteExceededTva": [
+      { "id": 104, "serviceType": "vente", "amountHt": 105000, "amountTotal": 110775, "status": "payee", "date": "2026-03-01T10:00:00.000Z", "paymentDate": "2026-03-01T10:00:00.000Z" }
+    ],
+    "venteApproachingMicro": [
+      { "id": 105, "serviceType": "vente", "amountHt": 175000, "amountTotal": 184625, "status": "payee", "date": "2026-03-01T10:00:00.000Z", "paymentDate": "2026-03-01T10:00:00.000Z" }
+    ]
+  }
+}

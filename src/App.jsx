@@ -1,6 +1,30 @@
 import React, { useState, useEffect } from 'react';
 import { db, generateInvoiceNumber, exportDatabaseData, importDatabaseData } from './db';
-import { exportInvoiceToPDF, generateInvoicePDF, exportEstimateToPDF } from './pdfGenerator';
+import {
+  exportInvoiceToPDF,
+  generateInvoicePDF,
+  exportEstimateToPDF,
+  generateEstimatePDF,
+} from './pdfGenerator';
+import { computeAmounts } from './domain/money';
+import { totalUrssafCharges } from './domain/urssaf';
+import { buildCaAlerts } from './domain/thresholds';
+import {
+  calculateCA,
+  calculateTotalExpenses,
+  getServiceTypeBreakdown,
+  getMonthlyFinancialsData,
+  getExpensesCategoryData,
+} from './domain/reporting';
+import {
+  formatPhoneInput,
+  validateClientForm,
+  validateInvoiceForm,
+  validateEstimateForm,
+  validateExpenseForm,
+  isValid,
+} from './domain/validation';
+import { buildEmailDraft, isInvoiceKind, DOCUMENT_KINDS } from './domain/templates';
 import Sidebar from './components/Sidebar';
 import DashboardTab from './components/DashboardTab';
 import ClientsTab from './components/ClientsTab';
@@ -37,11 +61,6 @@ const defaultSettings = {
   emailTemplateEstimate: "Bonjour {clientName},\n\nVeuillez trouver ci-joint le devis {documentNumber} pour la prestation : {description}.\n\nLe montant total est de {amountTotal} €.\n\nCordialement,\n\n{senderName}\n{senderCompany}",
   emailTemplateReminder: "Bonjour {clientName},\n\nSauf erreur ou omission de notre part, nous n'avons pas reçu le règlement de la facture {documentNumber} d'un montant de {amountTotal} € envoyée le {documentDate}.\n\nNous vous prions de bien vouloir régulariser cette situation dans les plus brefs délais. Vous trouverez la facture en pièce jointe.\n\nCordialement,\n\n{senderName}\n{senderCompany}"
 };
-
-// Regex declarations
-const EMAIL_REGEX = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/;
-// Format: Starts with 1-4 digits, space, street type (rue/bd/av/...), space, then name
-const ADDRESS_REGEX = /^\d{1,4}\s+(?:rue|boulevard|bd|avenue|av|place|impasse|route|chemin|allée|voie|square|quai)\s+.+/i;
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -415,10 +434,7 @@ export default function App() {
 
   // Format Phone dynamically as 'xx xx xx xx xx'
   const handlePhoneInput = (e) => {
-    const clean = e.target.value.replace(/\D/g, '').slice(0, 10);
-    const match = clean.match(/(\d{1,2})/g);
-    const formatted = match ? match.join(' ') : clean;
-    setClientForm({ ...clientForm, phone: formatted });
+    setClientForm({ ...clientForm, phone: formatPhoneInput(e.target.value) });
   };
 
   // --- CLIENT ACTIONS ---
@@ -435,37 +451,15 @@ export default function App() {
     setClientModalOpen(true);
   };
 
-  const validateClientForm = () => {
-    const errors = {};
-    if (!clientForm.companyName.trim()) errors.companyName = "Nom d'entreprise requis";
-    if (!clientForm.contactName.trim()) errors.contactName = "Nom du contact requis";
-    
-    if (!clientForm.email.trim()) {
-      errors.email = "Email requis";
-    } else if (!EMAIL_REGEX.test(clientForm.email)) {
-      errors.email = "Format email invalide (ex: client@domaine.fr)";
-    }
-
-    const cleanPhone = clientForm.phone.replace(/\s/g, '');
-    if (!clientForm.phone.trim()) {
-      errors.phone = "Numéro de téléphone requis";
-    } else if (cleanPhone.length !== 10) {
-      errors.phone = "Le numéro doit faire exactement 10 chiffres";
-    }
-
-    if (!clientForm.address.trim()) {
-      errors.address = "Adresse requise";
-    } else if (!ADDRESS_REGEX.test(clientForm.address)) {
-      errors.address = "Format invalide. Ex: '12 rue de Paris' (1-4 chiffres + rue/bd/av/place/impasse/route/chemin/allée/voie/square/quai + nom)";
-    }
-
+  const runClientValidation = () => {
+    const errors = validateClientForm(clientForm);
     setClientFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    return isValid(errors);
   };
 
   const handleSaveClient = async (e) => {
     e.preventDefault();
-    if (!validateClientForm()) return;
+    if (!runClientValidation()) return;
 
     try {
       if (clientForm.id) {
@@ -529,29 +523,21 @@ export default function App() {
     setInvoiceModalOpen(true);
   };
 
-  const validateInvoiceForm = () => {
-    const errors = {};
-    if (!invoiceForm.clientId) errors.clientId = "Client requis";
-    if (!invoiceForm.description.trim()) errors.description = "Description de la prestation requise";
-    
-    const htVal = parseFloat(invoiceForm.amountHt);
-    if (!invoiceForm.amountHt || isNaN(htVal) || htVal <= 0) {
-      errors.amountHt = "Veuillez entrer un montant HT valide supérieur à 0";
-    }
-
+  const runInvoiceValidation = () => {
+    const errors = validateInvoiceForm(invoiceForm);
     setInvoiceFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    return isValid(errors);
   };
 
   const handleSaveInvoice = async (e) => {
     e.preventDefault();
-    if (!validateInvoiceForm()) return;
+    if (!runInvoiceValidation()) return;
 
     const selectedClient = clients.find(c => c.id === parseInt(invoiceForm.clientId));
-    const amountHt = parseFloat(invoiceForm.amountHt);
-    const tvaRate = parseFloat(invoiceForm.tvaRate);
-    const amountTva = (amountHt * tvaRate) / 100;
-    const amountTotal = amountHt + amountTva;
+    const { amountHt, tvaRate, amountTva, amountTotal } = computeAmounts(
+      invoiceForm.amountHt,
+      invoiceForm.tvaRate,
+    );
     const date = new Date().toISOString();
 
     // Auto-generate invoice number
@@ -607,65 +593,11 @@ export default function App() {
     );
   };
 
-  const resolveTemplate = (template, data) => {
-    if (!template) return '';
-    return template
-      .replace(/{clientName}/g, data.clientName || '')
-      .replace(/{documentNumber}/g, data.documentNumber || '')
-      .replace(/{description}/g, data.description || '')
-      .replace(/{amountTotal}/g, data.amountTotal || '')
-      .replace(/{dueDate}/g, data.dueDate || '')
-      .replace(/{documentDate}/g, data.documentDate || '')
-      .replace(/{senderName}/g, data.senderName || '')
-      .replace(/{senderCompany}/g, data.senderCompany || '');
-  };
+  const handleOpenSendEmail = async (invoice, type = DOCUMENT_KINDS.INVOICE) => {
+    const client = await db.clients.get(invoice.clientId);
+    const draft = buildEmailDraft(invoice, type, client, businessSettings, defaultSettings);
 
-  const handleOpenSendEmail = async (invoice, type = 'invoice') => {
-    // Get client email
-    let client = await db.clients.get(invoice.clientId);
-    const toEmail = client ? client.email : '';
-    const isInvoice = type === 'invoice';
-    const isReminder = type === 'reminder';
-    
-    const num = isInvoice || isReminder ? invoice.invoiceNumber : invoice.estimateNumber;
-    const clientName = client ? client.companyName : '';
-    
-    // Select template
-    let template = '';
-    let subject = '';
-    
-    if (isInvoice) {
-      template = businessSettings.emailTemplateInvoice || defaultSettings.emailTemplateInvoice;
-      subject = `Facture ${num} - ${businessSettings.companyName}`;
-    } else if (isReminder) {
-      template = businessSettings.emailTemplateReminder || defaultSettings.emailTemplateReminder;
-      subject = `Rappel : Facture impayée ${num} - ${businessSettings.companyName}`;
-    } else {
-      template = businessSettings.emailTemplateEstimate || defaultSettings.emailTemplateEstimate;
-      subject = `Devis ${num} - ${businessSettings.companyName}`;
-    }
-    
-    const data = {
-      clientName: clientName,
-      documentNumber: num,
-      description: invoice.description || '',
-      amountTotal: invoice.amountTotal.toFixed(2),
-      dueDate: invoice.dueDate ? new Date(invoice.dueDate).toLocaleDateString('fr-FR') : '',
-      documentDate: invoice.date ? new Date(invoice.date).toLocaleDateString('fr-FR') : '',
-      senderName: businessSettings.contactName,
-      senderCompany: businessSettings.companyName
-    };
-    
-    const text = resolveTemplate(template, data);
-    
-    setEmailForm({
-      to: toEmail,
-      subject: subject,
-      text: text,
-      invoice: invoice,
-      type: type
-    });
-    
+    setEmailForm({ ...draft, invoice, type });
     setEmailModalOpen(true);
   };
 
@@ -685,7 +617,7 @@ export default function App() {
 
     try {
       const invoice = emailForm.invoice;
-      const isInvoice = emailForm.type === 'invoice' || emailForm.type === 'reminder';
+      const isInvoice = isInvoiceKind(emailForm.type);
       let client = await db.clients.get(invoice.clientId);
       if (!client) {
         client = {
@@ -823,27 +755,21 @@ export default function App() {
     setEstimateModalOpen(true);
   };
 
-  const validateEstimateForm = () => {
-    const errors = {};
-    if (!estimateForm.clientId) errors.clientId = "Client requis";
-    if (!estimateForm.description.trim()) errors.description = "Description requise";
-    const htVal = parseFloat(estimateForm.amountHt);
-    if (!estimateForm.amountHt || isNaN(htVal) || htVal <= 0) {
-      errors.amountHt = "Montant HT valide requis (> 0)";
-    }
+  const runEstimateValidation = () => {
+    const errors = validateEstimateForm(estimateForm);
     setEstimateFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    return isValid(errors);
   };
 
   const handleSaveEstimate = async (e) => {
     e.preventDefault();
-    if (!validateEstimateForm()) return;
+    if (!runEstimateValidation()) return;
 
     const selectedClient = clients.find(c => c.id === parseInt(estimateForm.clientId));
-    const amountHt = parseFloat(estimateForm.amountHt);
-    const tvaRate = parseFloat(estimateForm.tvaRate);
-    const amountTva = (amountHt * tvaRate) / 100;
-    const amountTotal = amountHt + amountTva;
+    const { amountHt, tvaRate, amountTva, amountTotal } = computeAmounts(
+      estimateForm.amountHt,
+      estimateForm.tvaRate,
+    );
     const date = new Date(estimateForm.date).toISOString();
 
     try {
@@ -973,20 +899,15 @@ export default function App() {
     setExpenseModalOpen(true);
   };
 
-  const validateExpenseForm = () => {
-    const errors = {};
-    if (!expenseForm.merchant.trim()) errors.merchant = "Fournisseur requis";
-    const amt = parseFloat(expenseForm.amount);
-    if (!expenseForm.amount || isNaN(amt) || amt <= 0) {
-      errors.amount = "Montant supérieur à 0 requis";
-    }
+  const runExpenseValidation = () => {
+    const errors = validateExpenseForm(expenseForm);
     setExpenseFormErrors(errors);
-    return Object.keys(errors).length === 0;
+    return isValid(errors);
   };
 
   const handleSaveExpense = async (e) => {
     e.preventDefault();
-    if (!validateExpenseForm()) return;
+    if (!runExpenseValidation()) return;
 
     const amount = parseFloat(expenseForm.amount);
     const date = new Date(expenseForm.date).toISOString();
@@ -1068,251 +989,18 @@ export default function App() {
     }
   };
 
-  // --- CALCULATION HELPERS FOR DASHBOARD ---
+  // --- AGRÉGATS DU TABLEAU DE BORD ---
+  // La logique vit dans src/domain : ces appels ne font que la brancher sur l'état.
+  const currentYear = new Date().getFullYear();
 
-  const calculateCA = () => {
-    let htFacture = 0;
-    let ttcFacture = 0;
-    let htEncaisse = 0;
-    let ttcEncaisse = 0;
-    invoices.forEach(inv => {
-      if (inv.status !== 'brouillon') {
-        htFacture += inv.amountHt;
-        ttcFacture += inv.amountTotal;
-      }
-      if (inv.status === 'payee') {
-        htEncaisse += inv.amountHt;
-        ttcEncaisse += inv.amountTotal;
-      }
-    });
-    return { ht: htEncaisse, ttc: ttcEncaisse, htFacture, ttcFacture };
-  };
-
-  const calculateUrssafCharges = () => {
-    let charges = 0;
-    invoices.forEach(inv => {
-      if (inv.status !== 'payee') return; // Only pay charges on encashed CA
-      
-      let rate = 0;
-      if (inv.serviceType === 'service_bnc') {
-        rate = businessSettings.urssafServiceBnc;
-      } else if (inv.serviceType === 'service_bic') {
-        rate = businessSettings.urssafServiceBic;
-      } else if (inv.serviceType === 'vente') {
-        rate = businessSettings.urssafVente;
-      }
-      
-      // If ACRE is enabled, rates are halved
-      if (businessSettings.acreEnabled) {
-        rate = rate / 2;
-      }
-
-      charges += (inv.amountHt * rate) / 100;
-    });
-    return charges;
-  };
-
-  const calculateTotalExpenses = () => {
-    return expenses.reduce((sum, exp) => sum + exp.amount, 0);
-  };
-
-  const getServiceTypeBreakdown = () => {
-    let bnc = 0;
-    let bic = 0;
-    let vente = 0;
-    invoices.forEach(inv => {
-      if (inv.status !== 'payee') return; // Only encashed CA
-      if (inv.serviceType === 'service_bnc') bnc += inv.amountHt;
-      else if (inv.serviceType === 'service_bic') bic += inv.amountHt;
-      else if (inv.serviceType === 'vente') vente += inv.amountHt;
-    });
-    const total = bnc + bic + vente;
-    return {
-      bnc: total > 0 ? (bnc / total) * 100 : 0,
-      bic: total > 0 ? (bic / total) * 100 : 0,
-      vente: total > 0 ? (vente / total) * 100 : 0,
-      total
-    };
-  };
-
-  const getMonthlyFinancialsData = () => {
-    const months = ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'];
-    const currentYear = new Date().getFullYear();
-    
-    const caPerMonth = Array(12).fill(0);
-    const expensesPerMonth = Array(12).fill(0);
-    const chargesPerMonth = Array(12).fill(0);
-    const profitPerMonth = Array(12).fill(0);
-    
-    // 1. Calculate CA & theoretical URSSAF charges per month
-    invoices.forEach(inv => {
-      if (inv.status === 'brouillon') return;
-      const invDate = new Date(inv.date);
-      if (invDate.getFullYear() === currentYear) {
-        const monthIndex = invDate.getMonth();
-        caPerMonth[monthIndex] += inv.amountHt;
-        
-        // Calculate URSSAF charge rate for this invoice
-        let rate = 0;
-        if (inv.serviceType === 'service_bnc') {
-          rate = businessSettings.urssafServiceBnc;
-        } else if (inv.serviceType === 'service_bic') {
-          rate = businessSettings.urssafServiceBic;
-        } else if (inv.serviceType === 'vente') {
-          rate = businessSettings.urssafVente;
-        }
-        if (businessSettings.acreEnabled) {
-          rate = rate / 2;
-        }
-        chargesPerMonth[monthIndex] += (inv.amountHt * rate) / 100;
-      }
-    });
-    
-    // 2. Calculate expenses per month
-    expenses.forEach(exp => {
-      const expDate = new Date(exp.date);
-      if (expDate.getFullYear() === currentYear) {
-        const monthIndex = expDate.getMonth();
-        expensesPerMonth[monthIndex] += exp.amount;
-      }
-    });
-    
-    // 3. Calculate profit per month
-    for (let i = 0; i < 12; i++) {
-      profitPerMonth[i] = caPerMonth[i] - expensesPerMonth[i] - chargesPerMonth[i];
-    }
-    
-    const allValues = [...caPerMonth, ...profitPerMonth];
-    const maxVal = Math.max(...allValues, 1000) * 1.15;
-    const minVal = Math.min(...allValues, 0) * 1.15; // Support negative profit
-    
-    return {
-      labels: months,
-      caValues: caPerMonth,
-      profitValues: profitPerMonth,
-      maxVal,
-      minVal
-    };
-  };
-
-  const getExpensesCategoryData = () => {
-    const categories = {
-      "Achats": 0,
-      "Déplacements": 0,
-      "Logiciels": 0,
-      "Télécoms": 0,
-      "Bureautique": 0,
-      "Cotisations": 0,
-      "Autre": 0
-    };
-    
-    const categoryLabels = {
-      "Achats": "Achats",
-      "Déplacements": "Déplacements",
-      "Logiciels": "Logiciels",
-      "Télécoms": "Télécoms",
-      "Bureautique": "Bureautique",
-      "Cotisations": "Cotisations",
-      "Autre": "Autre"
-    };
-
-    let total = 0;
-    expenses.forEach(exp => {
-      const cat = exp.category || 'Autre';
-      if (categories[cat] !== undefined) {
-        categories[cat] += exp.amount;
-      } else {
-        categories["Autre"] += exp.amount;
-      }
-      total += exp.amount;
-    });
-
-    const list = Object.keys(categories).map(key => {
-      const amount = categories[key];
-      const pct = total > 0 ? (amount / total) * 100 : 0;
-      return {
-        key,
-        label: categoryLabels[key] || key,
-        amount,
-        pct
-      };
-    }).filter(item => item.amount > 0); // Only keep categories with expenses
-
-    return {
-      total,
-      list
-    };
-  };
-
-  const { ht: totalCaHt, ttc: totalCaTtc, htFacture, ttcFacture } = calculateCA();
-  const totalUrssaf = calculateUrssafCharges();
-  const totalExpenses = calculateTotalExpenses();
+  const { ht: totalCaHt, ttc: totalCaTtc, htFacture, ttcFacture } = calculateCA(invoices);
+  const totalUrssaf = totalUrssafCharges(invoices, businessSettings);
+  const totalExpenses = calculateTotalExpenses(expenses);
   const netProfit = totalCaHt - totalUrssaf - totalExpenses;
-  const breakdown = getServiceTypeBreakdown();
-  const monthlyFinancials = getMonthlyFinancialsData();
-  const expensesCategoryData = getExpensesCategoryData();
-
-  // Calculate annual CA by category for current year to check thresholds
-  const currentYearForThresholds = new Date().getFullYear();
-  let annualServiceCa = 0;
-  let annualVenteCa = 0;
-  invoices.forEach(inv => {
-    if (inv.status !== 'payee') return;
-    const paymentDate = new Date(inv.paymentDate || inv.date);
-    if (paymentDate.getFullYear() === currentYearForThresholds) {
-      if (inv.serviceType === 'vente') {
-        annualVenteCa += inv.amountHt;
-      } else {
-        annualServiceCa += inv.amountHt;
-      }
-    }
-  });
-
-  const caAlerts = [];
-  if (annualServiceCa > 34000) {
-    if (annualServiceCa > 39100) {
-      caAlerts.push({
-        type: 'danger',
-        title: 'Seuil de TVA Services Dépassé',
-        message: `Votre CA annuel de services (${annualServiceCa.toLocaleString('fr-FR')} €) a dépassé la limite de tolérance de la franchise en base de TVA (39 100 €). Vous devez facturer de la TVA.`
-      });
-    } else {
-      caAlerts.push({
-        type: 'warning',
-        title: 'Seuil de TVA Services Proche',
-        message: `Votre CA annuel de services (${annualServiceCa.toLocaleString('fr-FR')} €) approche le seuil de la franchise en base de TVA (36 800 € / limite de tolérance : 39 100 €).`
-      });
-    }
-  }
-  if (annualServiceCa > 70000) {
-    caAlerts.push({
-      type: 'warning',
-      title: 'Plafond Micro-Entreprise Services Proche',
-      message: `Votre CA annuel de services (${annualServiceCa.toLocaleString('fr-FR')} €) approche le plafond de la micro-entreprise (77 700 €).`
-    });
-  }
-  if (annualVenteCa > 85000) {
-    if (annualVenteCa > 101000) {
-      caAlerts.push({
-        type: 'danger',
-        title: 'Seuil de TVA Ventes Dépassé',
-        message: `Votre CA annuel de ventes (${annualVenteCa.toLocaleString('fr-FR')} €) a dépassé la limite de tolérance de la franchise en base de TVA (101 000 €). Vous devez facturer de la TVA.`
-      });
-    } else {
-      caAlerts.push({
-        type: 'warning',
-        title: 'Seuil de TVA Ventes Proche',
-        message: `Votre CA annuel de ventes (${annualVenteCa.toLocaleString('fr-FR')} €) approche le seuil de la franchise en base de TVA (91 900 € / limite de tolérance : 101 000 €).`
-      });
-    }
-  }
-  if (annualVenteCa > 170000) {
-    caAlerts.push({
-      type: 'warning',
-      title: 'Plafond Micro-Entreprise Ventes Proche',
-      message: `Votre CA annuel de ventes (${annualVenteCa.toLocaleString('fr-FR')} €) approche le plafond de la micro-entreprise (188 700 €).`
-    });
-  }
+  const breakdown = getServiceTypeBreakdown(invoices);
+  const monthlyFinancials = getMonthlyFinancialsData(invoices, expenses, businessSettings, currentYear);
+  const expensesCategoryData = getExpensesCategoryData(expenses);
+  const caAlerts = buildCaAlerts(invoices, currentYear);
 
   // Filter lists
   const filteredClients = clients.filter(c => 

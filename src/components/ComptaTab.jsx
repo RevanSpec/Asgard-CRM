@@ -1,4 +1,7 @@
 import React from 'react';
+import { urssafDeclaration } from '../domain/urssaf';
+import { thresholdGauges } from '../domain/thresholds';
+import { buildRecettesCsv, recettesCsvFilename, getRecettesLedger } from '../domain/reporting';
 
 export default function ComptaTab({
   comptaActiveTab,
@@ -54,26 +57,20 @@ export default function ComptaTab({
             <button 
               className="btn btn-secondary"
               onClick={() => {
-                // Export to CSV
-                const paidInvoices = invoices.filter(inv => inv.status === 'payee').sort((a,b) => new Date(a.paymentDate || a.date) - new Date(b.paymentDate || b.date));
-                if (paidInvoices.length === 0) {
+                if (getRecettesLedger(invoices).length === 0) {
                   showAlert("Erreur", "Aucune recette encaissée à exporter.");
                   return;
                 }
-                let csv = "\uFEFFDate Encaissement;Facture;Client;Moyen de Paiement;Montant HT;Montant TTC\n";
-                paidInvoices.forEach(inv => {
-                  const date = new Date(inv.paymentDate || inv.date).toLocaleDateString('fr-FR');
-                  csv += `"${date}";"${inv.invoiceNumber}";"${inv.companyName}";"${inv.paymentMethod || 'Virement'}";${inv.amountHt.toFixed(2).replace('.', ',')};${inv.amountTotal.toFixed(2).replace('.', ',')}\n`;
-                });
-                
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+
+                const blob = new Blob([buildRecettesCsv(invoices)], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.setAttribute("href", url);
-                link.setAttribute("download", `Livre_des_recettes_${new Date().getFullYear()}.csv`);
+                link.setAttribute("download", recettesCsvFilename(new Date().getFullYear()));
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
+                URL.revokeObjectURL(url);
               }}
             >
               Exporter en CSV (.excel)
@@ -93,9 +90,7 @@ export default function ComptaTab({
                 </tr>
               </thead>
               <tbody>
-                {invoices
-                  .filter(inv => inv.status === 'payee')
-                  .sort((a, b) => new Date(b.paymentDate || b.date) - new Date(a.paymentDate || a.date))
+                {getRecettesLedger(invoices, 'desc')
                   .map(inv => (
                     <tr key={inv.id}>
                       <td style={{ fontWeight: 600, color: 'var(--color-gold)' }}>
@@ -114,7 +109,7 @@ export default function ComptaTab({
                       <td style={{ fontWeight: 600 }}>{inv.amountTotal.toFixed(2)} €</td>
                     </tr>
                   ))}
-                {invoices.filter(inv => inv.status === 'payee').length === 0 && (
+                {getRecettesLedger(invoices).length === 0 && (
                   <tr>
                     <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
                       Aucune facture n'est encore marquée comme "Payée".
@@ -184,43 +179,14 @@ export default function ComptaTab({
 
           {/* Calculate Period Data */}
           {(() => {
-            let bncHt = 0;
-            let bicHt = 0;
-            let venteHt = 0;
-            
-            invoices.forEach(inv => {
-              if (inv.status !== 'payee') return;
-              
-              const paymentDate = new Date(inv.paymentDate || inv.date);
-              if (paymentDate.getFullYear() !== selectedYear) return;
-              
-              const month = paymentDate.getMonth() + 1; // 1-12
-              
-              let matchesPeriod = false;
-              if (periodType === 'monthly') {
-                matchesPeriod = month === selectedMonth;
-              } else {
-                const quarter = Math.floor((month - 1) / 3) + 1;
-                matchesPeriod = quarter === selectedQuarter;
-              }
-              
-              if (matchesPeriod) {
-                if (inv.serviceType === 'service_bnc') bncHt += inv.amountHt;
-                else if (inv.serviceType === 'service_bic') bicHt += inv.amountHt;
-                else if (inv.serviceType === 'vente') venteHt += inv.amountHt;
-              }
-            });
+            const { bnc, bic, vente, totalCa: totalPeriodCa, totalCharges: totalPeriodCharges } =
+              urssafDeclaration(invoices, businessSettings, {
+                periodType, year: selectedYear, month: selectedMonth, quarter: selectedQuarter,
+              });
 
-            const bncRate = businessSettings.acreEnabled ? (businessSettings.urssafServiceBnc / 2) : businessSettings.urssafServiceBnc;
-            const bicRate = businessSettings.acreEnabled ? (businessSettings.urssafServiceBic / 2) : businessSettings.urssafServiceBic;
-            const venteRate = businessSettings.acreEnabled ? (businessSettings.urssafVente / 2) : businessSettings.urssafVente;
-
-            const bncCharges = (bncHt * bncRate) / 100;
-            const bicCharges = (bicHt * bicRate) / 100;
-            const venteCharges = (venteHt * venteRate) / 100;
-            
-            const totalPeriodCa = bncHt + bicHt + venteHt;
-            const totalPeriodCharges = bncCharges + bicCharges + venteCharges;
+            const { ht: bncHt, rate: bncRate, charges: bncCharges } = bnc;
+            const { ht: bicHt, rate: bicRate, charges: bicCharges } = bic;
+            const { ht: venteHt, rate: venteRate, charges: venteCharges } = vente;
 
             return (
               <div style={{ display: 'grid', gridTemplateColumns: '1.8fr 1.2fr', gap: '1.5rem' }}>
@@ -298,38 +264,15 @@ export default function ComptaTab({
           <h3 style={{ fontFamily: 'var(--font-title)', marginBottom: '1.25rem' }}>Surveillance des Seuils (Plafonds Annuels)</h3>
           
           {(() => {
-            // Calculate cumulative CA by category for current year
             const currentYear = new Date().getFullYear();
-            let serviceCa = 0; // Services BNC + Services BIC
-            let venteCa = 0; // Vente BIC
-            
-            invoices.forEach(inv => {
-              if (inv.status !== 'payee') return;
-              const paymentDate = new Date(inv.paymentDate || inv.date);
-              if (paymentDate.getFullYear() === currentYear) {
-                if (inv.serviceType === 'vente') {
-                  venteCa += inv.amountHt;
-                } else {
-                  serviceCa += inv.amountHt;
-                }
-              }
-            });
+            const gauges = thresholdGauges(invoices, currentYear);
 
-            // Thresholds definition
-            const limitTvaService = 36800;
-            const toleranceTvaService = 39100;
-            const limitMicroService = 77700;
-
-            const limitTvaVente = 91900;
-            const toleranceTvaVente = 101000;
-            const limitMicroVente = 188700;
-
-            // Percentages
-            const pctTvaService = Math.min((serviceCa / toleranceTvaService) * 100, 100);
-            const pctMicroService = Math.min((serviceCa / limitMicroService) * 100, 100);
-            
-            const pctTvaVente = Math.min((venteCa / toleranceTvaVente) * 100, 100);
-            const pctMicroVente = Math.min((venteCa / limitMicroVente) * 100, 100);
+            const serviceCa = gauges.service.ca;
+            const venteCa = gauges.vente.ca;
+            const { tvaLimit: limitTvaService, tvaTolerance: toleranceTvaService, microLimit: limitMicroService } = gauges.service;
+            const { tvaLimit: limitTvaVente, tvaTolerance: toleranceTvaVente, microLimit: limitMicroVente } = gauges.vente;
+            const { pctTva: pctTvaService, pctMicro: pctMicroService } = gauges.service;
+            const { pctTva: pctTvaVente, pctMicro: pctMicroVente } = gauges.vente;
 
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
