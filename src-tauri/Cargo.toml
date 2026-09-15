@@ -33,6 +33,20 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "sync-s
 
 thiserror = "2"
 
+# Base de donnees fichier — remplace Dexie / IndexedDB (phase 2)
+sqlx = { version = "0.8", default-features = false, features = [
+    "runtime-tokio",
+    "sqlite",
+    "migrate",
+    "macros",
+] }
+tokio = { version = "1", features = ["sync"] }
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+
+[dev-dependencies]
+# `#[tokio::test]` et `tokio::join!` n'existent qu'avec les macros et un runtime.
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
+
 [profile.release]
 panic = "abort"
 codegen-units = 1

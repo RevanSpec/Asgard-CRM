@@ -1,110 +1,151 @@
-import Dexie from 'dexie';
-import { yearBounds, buildDocumentNumber } from './domain/numbering';
-
-export const db = new Dexie('AsgardCRMDatabase');
-
-// Define database schema with version 1 and 2 (migration)
-db.version(1).stores({
-  clients: '++id, companyName, contactName, email, phone, address, createdAt',
-  invoices: '++id, clientId, invoiceNumber, companyName, serviceType, description, amountHt, tvaRate, amountTva, amountTotal, date'
-});
-
-db.version(2).stores({
-  clients: '++id, companyName, contactName, email, phone, address, createdAt',
-  invoices: '++id, clientId, invoiceNumber, companyName, serviceType, description, amountHt, tvaRate, amountTva, amountTotal, date, status, paymentDate, paymentMethod',
-  estimates: '++id, clientId, estimateNumber, companyName, serviceType, description, amountHt, tvaRate, amountTva, amountTotal, date, status',
-  expenses: '++id, date, merchant, category, amount, description, paymentMethod'
-}).upgrade(tx => {
-  // Set default status to 'payee' for existing invoices (so previous data is considered paid by default)
-  return tx.invoices.toCollection().modify(invoice => {
-    if (!invoice.status) {
-      invoice.status = 'payee';
-      invoice.paymentDate = invoice.date;
-      invoice.paymentMethod = 'virement';
-    }
-  });
-});
+/**
+ * Accès aux données.
+ *
+ * Phase 2 : ce fichier n'est plus un schéma Dexie mais un adaptateur vers les
+ * commandes de l'hôte Rust. Les données vivent désormais dans un fichier SQLite
+ * du répertoire applicatif, que l'utilisateur peut copier et sauvegarder —
+ * IndexedDB vivait dans le profil du moteur de rendu et disparaissait avec lui
+ * (défaut D6).
+ *
+ * Les objets renvoyés gardent exactement la forme que produisait Dexie, pour
+ * que les composants n'aient pas à changer. Deux différences assumées :
+ *
+ * - les numéros de pièce sont attribués par la base, plus par l'appelant. La
+ *   fonction `generateInvoiceNumber` a disparu : elle portait le défaut D3 ;
+ * - supprimer une facture émise l'archive au lieu de l'effacer (défaut D4), et
+ *   les fonctions de suppression rendent compte de ce qu'elles ont fait.
+ */
+import { invoke } from '@tauri-apps/api/core';
+import { isDesktop } from './ipc';
 
 /**
- * Generates an automatic invoice number in the format: FAC-CLIENT-ANNEE-000X
- * @param {string} companyName - Name of the client company
- * @param {string} dateStr - ISO Date string of the invoice
- * @returns {Promise<string>} The generated invoice number
+ * Hors coquille de bureau (`npm run dev:vite`), il n'y a pas d'hôte donc pas de
+ * base. L'interface s'affiche avec un jeu vide plutôt que de planter, ce qui
+ * reste pratique pour travailler la mise en page. Toute écriture est ignorée.
  */
-export async function generateInvoiceNumber(companyName, dateStr) {
-  const { start, end } = yearBounds(dateStr);
+const EMPTY_SNAPSHOT = { clients: [], invoices: [], estimates: [], expenses: [] };
 
-  const count = await db.invoices
-    .where('date')
-    .between(start, end, true, true)
-    .count();
+let warned = false;
 
-  return buildDocumentNumber('invoice', companyName, dateStr, count);
-}
-
-/**
- * Generates an automatic estimate number in the format: DEV-CLIENT-ANNEE-000X
- * @param {string} companyName - Name of the client company
- * @param {string} dateStr - ISO Date string of the estimate
- * @returns {Promise<string>} The generated estimate number
- */
-export async function generateEstimateNumber(companyName, dateStr) {
-  const { start, end } = yearBounds(dateStr);
-
-  const count = await db.estimates
-    .where('date')
-    .between(start, end, true, true)
-    .count();
-
-  return buildDocumentNumber('estimate', companyName, dateStr, count);
-}
-
-/**
- * Exports all database data to a single object.
- * @returns {Promise<object>} The exported data
- */
-export async function exportDatabaseData() {
-  return {
-    clients: await db.clients.toArray(),
-    invoices: await db.invoices.toArray(),
-    estimates: await db.estimates.toArray(),
-    expenses: await db.expenses.toArray(),
-    version: db.verno,
-    exportedAt: new Date().toISOString(),
-  };
-}
-
-/**
- * Clears current database and imports data.
- * @param {object} data - The data to import
- * @returns {Promise<void>}
- */
-export async function importDatabaseData(data) {
-  if (!data || typeof data !== 'object') {
-    throw new Error("Données de sauvegarde invalides.");
+function unavailable(operation) {
+  if (!warned) {
+    warned = true;
+    console.warn(
+      "Asgard CRM tourne sans son hôte : les données ne sont ni lues ni enregistrées. " +
+      "Lancez `npm run dev` pour la version complète."
+    );
   }
-
-  // Execute import inside a read-write transaction for atomicity
-  await db.transaction('rw', [db.clients, db.invoices, db.estimates, db.expenses], async () => {
-    // 1. Clear existing tables
-    await db.clients.clear();
-    await db.invoices.clear();
-    await db.estimates.clear();
-    await db.expenses.clear();
-
-    // 2. Repopulate with imported data if arrays exist
-    if (Array.isArray(data.clients)) {
-      await db.clients.bulkAdd(data.clients);
-    }
-    if (Array.isArray(data.invoices)) {
-      await db.invoices.bulkAdd(data.invoices);
-    }
-    if (Array.isArray(data.estimates)) {
-      await db.estimates.bulkAdd(data.estimates);
-    }
-    if (Array.isArray(data.expenses)) {
-      await db.expenses.bulkAdd(data.expenses);
-    }
-  });
+  console.warn(`Opération ignorée hors coquille de bureau : ${operation}`);
 }
 
+async function call(command, args, fallback) {
+  if (!isDesktop()) {
+    unavailable(command);
+    return fallback;
+  }
+  return invoke(command, args);
+}
+
+// ------------------------------------------------------------------ lecture
+
+/** Charge les quatre tables en un seul aller-retour. */
+export async function loadSnapshot() {
+  return call('load_snapshot', undefined, EMPTY_SNAPSHOT);
+}
+
+/** Chemin du fichier de base, à afficher dans les réglages. */
+export async function databasePath() {
+  return call('database_path', undefined, '');
+}
+
+// ------------------------------------------------------------------ clients
+
+/** Crée ou met à jour un client selon la présence de `id`. */
+export async function saveClient(client) {
+  return call('save_client', { client }, null);
+}
+
+export async function deleteClient(id) {
+  return call('delete_client', { id }, null);
+}
+
+// ----------------------------------------------------------------- factures
+
+/**
+ * Crée une facture. Le numéro est attribué par la base dans la transaction
+ * d'insertion — l'interface ne peut plus en proposer un.
+ */
+export async function createInvoice(invoice) {
+  return call('create_invoice', { invoice }, null);
+}
+
+export async function setInvoiceStatus(id, status) {
+  return call('set_invoice_status', { id, status }, null);
+}
+
+export async function recordPayment(payment) {
+  return call('record_payment', { payment }, null);
+}
+
+/**
+ * Supprime des factures.
+ *
+ * Renvoie `{ discarded, archived }` : les brouillons sont réellement effacés,
+ * les pièces émises seulement retirées de l'affichage. Une facture émise ne se
+ * supprime pas — conservation dix ans, art. L123-22 du code de commerce.
+ */
+export async function deleteInvoices(ids) {
+  return call('delete_invoices', { ids }, { discarded: 0, archived: 0 });
+}
+
+// -------------------------------------------------------------------- devis
+
+export async function saveEstimate(estimate) {
+  return call('save_estimate', { estimate }, null);
+}
+
+export async function setEstimateStatus(id, status) {
+  return call('set_estimate_status', { id, status }, null);
+}
+
+export async function deleteEstimate(id) {
+  return call('delete_estimate', { id }, { discarded: 0, archived: 0 });
+}
+
+/** Convertit un devis en facture ; les deux écritures sont atomiques. */
+export async function convertEstimate(id) {
+  return call('convert_estimate', { id }, null);
+}
+
+// ----------------------------------------------------------------- dépenses
+
+export async function saveExpense(expense) {
+  return call('save_expense', { expense }, null);
+}
+
+export async function deleteExpense(id) {
+  return call('delete_expense', { id }, null);
+}
+
+// -------------------------------------------------------------- sauvegardes
+
+export async function exportBackup() {
+  return call('export_backup', undefined, EMPTY_SNAPSHOT);
+}
+
+/**
+ * Reprend une sauvegarde et renvoie un compte rendu.
+ *
+ * `adjustments` liste les montants que l'arrondi au centime a modifiés : le
+ * passage des flottants aux entiers change réellement certaines valeurs, et
+ * l'utilisateur doit pouvoir l'expliquer plutôt que de le découvrir dans une
+ * déclaration.
+ */
+export async function importBackup(backup) {
+  return call('import_backup', { backup }, null);
+}
+
+/** Copie atomique du fichier de base — ce qu'IndexedDB ne permettait pas. */
+export async function backupToFile(destination) {
+  return call('backup_to_file', { destination }, null);
+}
