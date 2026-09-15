@@ -1,6 +1,6 @@
 # Asgard CRM 🛡️
 
-**Asgard CRM** est une application de bureau légère, moderne et performante conçue spécifiquement pour les micro-entrepreneurs et auto-entrepreneurs français. Construite avec **React**, **Vite** et **Electron**, elle permet de gérer l'intégralité de votre activité commerciale et comptable en local, garantissant une confidentialité totale de vos données.
+**Asgard CRM** est une application de bureau légère, moderne et performante conçue spécifiquement pour les micro-entrepreneurs et auto-entrepreneurs français. Construite avec **React**, **Vite** et **Tauri**, elle permet de gérer l'intégralité de votre activité commerciale et comptable en local, garantissant une confidentialité totale de vos données.
 
 ---
 
@@ -28,20 +28,29 @@
 
 ## 🛠️ Stack Technique
 
-* **Framework de bureau** : [Electron](https://www.electronjs.org/)
+* **Framework de bureau** : [Tauri 2](https://tauri.app/) (hôte Rust, webview du système)
 * **Frontend** : [React](https://react.dev/) + [Vite](https://vite.dev/)
 * **Base de données** : [Dexie.js](https://dexie.org/) (IndexedDB wrapper)
 * **Design** : Interface responsive moderne avec thème sombre *glassmorphism* haut de gamme.
-* **Génération PDF** : [html2canvas](https://html2canvas.hertzen.com/) & [jspdf](https://artskydj.github.io/jsPDF/docs/index.html)
-* **Envoi d'emails** : [Nodemailer](https://nodemailer.com/) (géré via IPC Electron)
+* **Génération PDF** : [jspdf](https://artskydj.github.io/jsPDF/docs/index.html)
+* **Envoi d'emails** : [lettre](https://lettre.rs/) (commande Tauri, côté Rust)
+* **Secrets** : trousseau du système d'exploitation via [keyring](https://crates.io/crates/keyring)
 * **Linter** : [Oxlint](https://oxc.rs/docs/guide/usage/linter.html) (ultra rapide)
+* **Tests** : [Vitest](https://vitest.dev/) pour la logique métier, `cargo test` pour l'hôte
+
+> 🦀 Le projet migre progressivement vers Rust — voir [`docs/MIGRATION_RUST.md`](docs/MIGRATION_RUST.md).
+> Phases livrées : **0** (logique métier sous tests), **1** (coquille Tauri).
 
 ---
 
 ## ⚙️ Installation & Démarrage local
 
 ### Prérequis
-Assurez-vous d'avoir [Node.js](https://nodejs.org/) (version 18 ou supérieure recommandée) installé sur votre machine.
+
+* [Node.js](https://nodejs.org/) 18 ou supérieur
+* [Rust](https://rustup.rs/) 1.77 ou supérieur (`rustup default stable`)
+* Sous Windows : **WebView2**, présent d'origine depuis Windows 10 21H2, et les *Build Tools* de Visual Studio (composant C++)
+* Sous Linux : `libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`
 
 ### Étapes d'installation
 
@@ -61,7 +70,25 @@ Assurez-vous d'avoir [Node.js](https://nodejs.org/) (version 18 ou supérieure r
    ```bash
    npm run dev
    ```
-   *Cette commande lance simultanément le serveur de développement Vite (sur le port 5173) et l'application Electron.*
+   *Tauri lance le serveur Vite (port 5173) puis compile et ouvre l'application. La première compilation Rust prend plusieurs minutes ; les suivantes sont quasi instantanées.*
+
+   Pour travailler l'interface seule, sans recompiler Rust :
+   ```bash
+   npm run dev:vite
+   ```
+   *Les fonctionnalités qui dépendent de l'hôte — envoi d'e-mails, trousseau — sont alors désactivées proprement.*
+
+4. **Construire l'installeur** :
+   ```bash
+   npm run dist
+   ```
+
+### Tests
+
+```bash
+npm test                      # logique métier (151 tests)
+cd src-tauri && cargo test    # hôte Rust
+```
 
 ---
 
@@ -74,3 +101,7 @@ Si vous utilisez **Proton Mail Bridge** pour envoyer vos e-mails professionnels 
    - **Port** : Le port fourni par votre application Bridge (généralement `1025`)
    - **Utilisateur / Mot de passe** : Les identifiants générés par Proton Mail Bridge
    - **Sécurité** : Choisissez `Aucune (STARTTLS automatique / Proton Mail Bridge)` car le certificat local auto-signé de Proton est automatiquement accepté.
+
+> 🔐 Depuis la phase 1, le mot de passe SMTP est conservé dans le **trousseau de votre système** (Gestionnaire d'identifiants Windows, Trousseau macOS, Secret Service Linux) et non plus dans les réglages de l'application. Il ne figure donc plus dans les fichiers de sauvegarde. Un mot de passe déjà enregistré par une version précédente est déplacé automatiquement au premier lancement.
+>
+> La tolérance au certificat auto-signé ne vaut que pour `127.0.0.1` et `localhost` — jamais pour un serveur distant.

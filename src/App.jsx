@@ -25,6 +25,7 @@ import {
   isValid,
 } from './domain/validation';
 import { buildEmailDraft, isInvoiceKind, DOCUMENT_KINDS } from './domain/templates';
+import { isDesktop, sendEmail, testSmtp, setSmtpPassword, hasSmtpPassword } from './ipc';
 import Sidebar from './components/Sidebar';
 import DashboardTab from './components/DashboardTab';
 import ClientsTab from './components/ClientsTab';
@@ -33,9 +34,6 @@ import EstimatesTab from './components/EstimatesTab';
 import ExpensesTab from './components/ExpensesTab';
 import ComptaTab from './components/ComptaTab';
 import SettingsTab from './components/SettingsTab';
-
-// Electron IPC renderer (safe for web testing too)
-const ipcRenderer = window.require ? window.require('electron').ipcRenderer : null;
 
 // Default business details in localstorage if empty
 const defaultSettings = {
@@ -53,7 +51,6 @@ const defaultSettings = {
   smtpHost: '127.0.0.1',
   smtpPort: '1025',
   smtpUser: '',
-  smtpPass: '',
   smtpSecure: 'none',
   customColor: '#E5A93C',
   logoBase64: '',
@@ -61,6 +58,53 @@ const defaultSettings = {
   emailTemplateEstimate: "Bonjour {clientName},\n\nVeuillez trouver ci-joint le devis {documentNumber} pour la prestation : {description}.\n\nLe montant total est de {amountTotal} €.\n\nCordialement,\n\n{senderName}\n{senderCompany}",
   emailTemplateReminder: "Bonjour {clientName},\n\nSauf erreur ou omission de notre part, nous n'avons pas reçu le règlement de la facture {documentNumber} d'un montant de {amountTotal} € envoyée le {documentDate}.\n\nNous vous prions de bien vouloir régulariser cette situation dans les plus brefs délais. Vous trouverez la facture en pièce jointe.\n\nCordialement,\n\n{senderName}\n{senderCompany}"
 };
+
+/**
+ * Clé du mot de passe SMTP telle qu'elle existait dans localStorage avant la
+ * phase 1. Conservée uniquement pour pouvoir la retirer.
+ */
+const LEGACY_SMTP_PASS_KEY = 'smtpPass';
+
+/**
+ * Retire le mot de passe d'un objet de réglages.
+ *
+ * Appliqué au chargement, à chaque enregistrement et à l'import de sauvegarde :
+ * sans cela, un ancien fichier de sauvegarde réintroduirait le secret en clair
+ * dans localStorage, et le défaut D2 reviendrait par la porte de derrière.
+ */
+function stripSecret(settings) {
+  if (!settings || !(LEGACY_SMTP_PASS_KEY in settings)) return settings;
+  const { [LEGACY_SMTP_PASS_KEY]: _discarded, ...rest } = settings;
+  return rest;
+}
+
+/**
+ * Déplace vers le trousseau de l'OS un mot de passe encore stocké en clair.
+ *
+ * Les installations existantes ont le secret dans localStorage. S'en tenir à
+ * « les nouvelles écritures vont ailleurs » le laisserait sur le disque
+ * indéfiniment : la migration doit aussi effacer l'ancien emplacement.
+ */
+async function migrateLegacySmtpPassword() {
+  const raw = localStorage.getItem('asgard_crm_settings');
+  if (!raw) return;
+
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return;
+  }
+
+  const legacy = parsed?.[LEGACY_SMTP_PASS_KEY];
+  if (!(LEGACY_SMTP_PASS_KEY in (parsed || {}))) return;
+
+  if (legacy && isDesktop()) {
+    await setSmtpPassword(legacy);
+  }
+
+  localStorage.setItem('asgard_crm_settings', JSON.stringify(stripSecret(parsed)));
+}
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -83,6 +127,12 @@ export default function App() {
   const [emailForm, setEmailForm] = useState({ to: '', subject: '', text: '', invoice: null, type: 'invoice' });
   const [sendingEmail, setSendingEmail] = useState(false);
   const [smtpTesting, setSmtpTesting] = useState(false);
+
+  // Le mot de passe SMTP vit dans le trousseau de l'OS, pas dans les réglages.
+  // L'interface n'en garde qu'un brouillon de saisie, et un booléen disant
+  // si un secret est déjà enregistré — elle ne peut jamais le relire.
+  const [smtpPassDraft, setSmtpPassDraft] = useState('');
+  const [smtpPassStored, setSmtpPassStored] = useState(false);
 
   // Estimates, Expenses and Compta States
   const [estimates, setEstimates] = useState([]);
@@ -336,12 +386,14 @@ export default function App() {
   useEffect(() => {
     const saved = localStorage.getItem('asgard_crm_settings');
     if (saved) {
-      setBusinessSettings({ ...defaultSettings, ...JSON.parse(saved) });
+      setBusinessSettings({ ...defaultSettings, ...stripSecret(JSON.parse(saved)) });
     } else {
       localStorage.setItem('asgard_crm_settings', JSON.stringify(defaultSettings));
     }
 
     const init = async () => {
+      await migrateLegacySmtpPassword();
+      setSmtpPassStored(await hasSmtpPassword());
       await seedDatabase();
       await loadAllData();
     };
@@ -350,8 +402,27 @@ export default function App() {
 
   // Save Settings to LocalStorage & DB helper
   const saveSettings = (newSettings) => {
-    setBusinessSettings(newSettings);
-    localStorage.setItem('asgard_crm_settings', JSON.stringify(newSettings));
+    const safe = stripSecret(newSettings);
+    setBusinessSettings(safe);
+    localStorage.setItem('asgard_crm_settings', JSON.stringify(safe));
+  };
+
+  // Confie le mot de passe saisi au trousseau de l'OS.
+  const handleSaveSmtpPassword = async () => {
+    if (!isDesktop()) {
+      showAlert("Erreur", "Le trousseau n'est disponible que dans la version de bureau de l'application.");
+      return;
+    }
+
+    await setSmtpPassword(smtpPassDraft);
+    setSmtpPassStored(smtpPassDraft !== '');
+    setSmtpPassDraft('');
+    showAlert(
+      "Enregistré",
+      smtpPassDraft
+        ? "Le mot de passe SMTP a été placé dans le trousseau de votre système. Il ne figure plus dans les réglages ni dans les sauvegardes."
+        : "Le mot de passe SMTP a été supprimé du trousseau."
+    );
   };
 
   // Export all DB tables and settings as a JSON file backup
@@ -409,9 +480,10 @@ export default function App() {
           // 1. Import database tables
           await importDatabaseData(dbData);
 
-          // 2. Restore settings
+          // 2. Restore settings — sans le mot de passe SMTP : une sauvegarde
+          //    d'avant la phase 1 le contient en clair et le réinjecterait.
           if (settingsData) {
-            saveSettings(settingsData);
+            saveSettings(stripSecret(settingsData));
           }
 
           // 3. Reload state
@@ -603,7 +675,7 @@ export default function App() {
 
   const handleSendEmail = async (e) => {
     e.preventDefault();
-    if (!ipcRenderer) {
+    if (!isDesktop()) {
       showAlert("Erreur", "L'envoi d'e-mails n'est disponible que dans la version de bureau de l'application.");
       return;
     }
@@ -636,12 +708,12 @@ export default function App() {
       const pdfDataUri = doc.output('datauristring');
       const pdfBase64 = pdfDataUri.split(',')[1];
 
-      // 2. Prepare SMTP configuration from settings
+      // 2. Configuration SMTP. Pas de mot de passe : l'hôte le lit dans le
+      //    trousseau de l'OS au moment de l'envoi (défaut D2).
       const smtpConfig = {
         host: businessSettings.smtpHost,
         port: businessSettings.smtpPort,
         user: businessSettings.smtpUser,
-        pass: businessSettings.smtpPass,
         secure: businessSettings.smtpSecure,
         from: businessSettings.email
       };
@@ -656,8 +728,8 @@ export default function App() {
         pdfBase64
       };
 
-      // 4. Send via IPC
-      const result = await ipcRenderer.invoke('send-email', { smtpConfig, emailData });
+      // 4. Envoi via la commande Tauri
+      const result = await sendEmail(smtpConfig, emailData);
 
       if (result.success) {
         setEmailModalOpen(false);
@@ -674,23 +746,25 @@ export default function App() {
   };
 
   const handleTestSMTP = async () => {
-    if (!ipcRenderer) {
-      showAlert("Erreur", "Les fonctions de messagerie ne sont pas disponibles hors d'Electron.");
+    if (!isDesktop()) {
+      showAlert("Erreur", "Les fonctions de messagerie ne sont pas disponibles hors de l'application de bureau.");
       return;
     }
 
     setSmtpTesting(true);
 
     try {
+      // Le test accepte un mot de passe saisi mais pas encore enregistré, pour
+      // qu'on puisse valider des identifiants avant de les confier au trousseau.
       const smtpConfig = {
         host: businessSettings.smtpHost,
         port: businessSettings.smtpPort,
         user: businessSettings.smtpUser,
-        pass: businessSettings.smtpPass,
+        pass: smtpPassDraft,
         secure: businessSettings.smtpSecure
       };
 
-      const result = await ipcRenderer.invoke('test-smtp', smtpConfig);
+      const result = await testSmtp(smtpConfig);
 
       if (result.success) {
         showAlert("Connexion réussie", "La configuration SMTP est correcte ! Le serveur a validé les identifiants.");
@@ -1084,6 +1158,10 @@ export default function App() {
             saveSettings={saveSettings}
             handleTestSMTP={handleTestSMTP}
             smtpTesting={smtpTesting}
+            smtpPassDraft={smtpPassDraft}
+            setSmtpPassDraft={setSmtpPassDraft}
+            smtpPassStored={smtpPassStored}
+            handleSaveSmtpPassword={handleSaveSmtpPassword}
             handleExportBackup={handleExportBackup}
             handleImportBackup={handleImportBackup}
             showAlert={showAlert}
