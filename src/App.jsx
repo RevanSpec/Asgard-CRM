@@ -1,5 +1,20 @@
 import React, { useState, useEffect } from 'react';
-import { db, generateInvoiceNumber, exportDatabaseData, importDatabaseData } from './db';
+import {
+  loadSnapshot,
+  saveClient,
+  deleteClient,
+  createInvoice,
+  setInvoiceStatus,
+  recordPayment,
+  deleteInvoices,
+  saveEstimate,
+  deleteEstimate,
+  convertEstimate,
+  saveExpense,
+  deleteExpense,
+  exportBackup,
+  importBackup,
+} from './db';
 import {
   exportInvoiceToPDF,
   generateInvoicePDF,
@@ -106,6 +121,47 @@ async function migrateLegacySmtpPassword() {
   localStorage.setItem('asgard_crm_settings', JSON.stringify(stripSecret(parsed)));
 }
 
+/**
+ * Met en mots le compte rendu d'une reprise de sauvegarde.
+ *
+ * La partie qui compte est `adjustments` : le passage des montants flottants
+ * aux centimes change réellement certaines valeurs — `1899,99 € × 20 %` valait
+ * `379,998 €` et vaut désormais `380,00 €`. C'est plus juste, une facture ne se
+ * libellant pas en fractions de centime, mais cela modifie des documents déjà
+ * émis. L'utilisateur doit pouvoir l'expliquer, pas le découvrir dans une
+ * déclaration.
+ */
+function describeImport(report) {
+  const parts = [
+    `${report.clients} client(s), ${report.invoices} facture(s), ` +
+    `${report.estimates} devis et ${report.expenses} dépense(s) repris.`,
+  ];
+
+  if (report.adjustments.length > 0) {
+    const shown = report.adjustments.slice(0, 5)
+      .map((a) => `• ${a.document} — ${a.field} : ${a.before} → ${a.after} €`)
+      .join('\n');
+    const rest = report.adjustments.length > 5
+      ? `\n… et ${report.adjustments.length - 5} autre(s).`
+      : '';
+
+    parts.push(
+      `\n${report.adjustments.length} montant(s) ajusté(s) au centime. ` +
+      `Vos données étaient stockées en virgule flottante ; elles le sont ` +
+      `désormais en centimes, ce qui supprime les écarts d'arrondi :\n${shown}${rest}`
+    );
+  }
+
+  if (report.skipped.length > 0) {
+    parts.push(
+      `\n${report.skipped.length} pièce(s) écartée(s) :\n• ` +
+      report.skipped.slice(0, 5).join('\n• ')
+    );
+  }
+
+  return parts.join('\n');
+}
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [clients, setClients] = useState([]);
@@ -183,203 +239,15 @@ export default function App() {
   const closeAlert = () => setCustomAlert({ ...customAlert, open: false });
   const closeConfirm = () => setCustomConfirm({ ...customConfirm, open: false });
 
-  // Seed database if empty
-  const seedDatabase = async () => {
-    const clientsCount = await db.clients.count();
-    if (clientsCount === 0) {
-      // Seed clients
-      const starkId = await db.clients.add({
-        companyName: 'Stark Industries',
-        contactName: 'Pepper Potts',
-        email: 'pepper@stark.com',
-        phone: '06 11 22 33 44',
-        address: '108 Route de Malibu, 75008 Paris',
-        createdAt: new Date('2026-01-10').toISOString()
-      });
-      const wayneId = await db.clients.add({
-        companyName: 'Wayne Enterprises',
-        contactName: 'Lucius Fox',
-        email: 'lucius@wayne.com',
-        phone: '07 88 99 00 11',
-        address: '12 Avenue de Gotham, 75016 Paris',
-        createdAt: new Date('2026-02-15').toISOString()
-      });
-      const asgardId = await db.clients.add({
-        companyName: 'Asgard Coffee',
-        contactName: 'Valkyrie',
-        email: 'valk@coffee.asgard',
-        phone: '06 55 55 55 55',
-        address: '45 Rue du Bifrost, 75011 Paris',
-        createdAt: new Date('2026-03-20').toISOString()
-      });
-
-      // Seed invoices spread over months for beautiful Dashboard metrics & charts
-      const invoicesSeed = [
-        {
-          clientId: starkId,
-          companyName: 'Stark Industries',
-          invoiceNumber: 'FAC-STARK-2026-0001',
-          serviceType: 'service_bnc',
-          description: 'Consulting en nanotechnologies',
-          amountHt: 6000,
-          tvaRate: 20,
-          amountTva: 1200,
-          amountTotal: 7200,
-          date: new Date('2026-02-05').toISOString(),
-          status: 'payee',
-          paymentDate: new Date('2026-02-05').toISOString(),
-          paymentMethod: 'virement'
-        },
-        {
-          clientId: wayneId,
-          companyName: 'Wayne Enterprises',
-          invoiceNumber: 'FAC-WAYNE-2026-0002',
-          serviceType: 'service_bnc',
-          description: 'Audit système de défense sonar',
-          amountHt: 12500,
-          tvaRate: 20,
-          amountTva: 2500,
-          amountTotal: 15000,
-          date: new Date('2026-03-12').toISOString(),
-          status: 'payee',
-          paymentDate: new Date('2026-03-12').toISOString(),
-          paymentMethod: 'virement'
-        },
-        {
-          clientId: asgardId,
-          companyName: 'Asgard Coffee',
-          invoiceNumber: 'FAC-ASGARDCOF-2026-0003',
-          serviceType: 'vente',
-          description: 'Livraison de grains de café d\'Éthiopie',
-          amountHt: 1400,
-          tvaRate: 5.5,
-          amountTva: 77,
-          amountTotal: 1477,
-          date: new Date('2026-04-18').toISOString(),
-          status: 'payee',
-          paymentDate: new Date('2026-04-18').toISOString(),
-          paymentMethod: 'virement'
-        },
-        {
-          clientId: starkId,
-          companyName: 'Stark Industries',
-          invoiceNumber: 'FAC-STARK-2026-0004',
-          serviceType: 'service_bnc',
-          description: 'Optimisation de l\'IA Jarvis',
-          amountHt: 4500,
-          tvaRate: 20,
-          amountTva: 900,
-          amountTotal: 5400,
-          date: new Date('2026-05-02').toISOString(),
-          status: 'payee',
-          paymentDate: new Date('2026-05-02').toISOString(),
-          paymentMethod: 'virement'
-        },
-        {
-          clientId: wayneId,
-          companyName: 'Wayne Enterprises',
-          invoiceNumber: 'FAC-WAYNE-2026-0005',
-          serviceType: 'service_bnc',
-          description: 'Développement application de traque',
-          amountHt: 9000,
-          tvaRate: 20,
-          amountTva: 1800,
-          amountTotal: 10800,
-          date: new Date('2026-06-25').toISOString(),
-          status: 'payee',
-          paymentDate: new Date('2026-06-25').toISOString(),
-          paymentMethod: 'virement'
-        },
-        {
-          clientId: asgardId,
-          companyName: 'Asgard Coffee',
-          invoiceNumber: 'FAC-ASGARDCOF-2026-0006',
-          serviceType: 'vente',
-          description: 'Achat de machines expresso professionnelles',
-          amountHt: 2800,
-          tvaRate: 20,
-          amountTva: 560,
-          amountTotal: 3360,
-          date: new Date('2026-07-01').toISOString(),
-          status: 'envoyee'
-        }
-      ];
-
-      for (const inv of invoicesSeed) {
-        await db.invoices.add(inv);
-      }
-
-      // Seed Estimates
-      await db.estimates.add({
-        clientId: starkId,
-        companyName: 'Stark Industries',
-        estimateNumber: 'DEV-STARK-2026-0001',
-        serviceType: 'service_bnc',
-        description: 'Déploiement infrastructure IA Jarvis',
-        amountHt: 8000,
-        tvaRate: 20,
-        amountTva: 1600,
-        amountTotal: 9600,
-        date: new Date('2026-06-10').toISOString(),
-        status: 'accepte'
-      });
-      await db.estimates.add({
-        clientId: wayneId,
-        companyName: 'Wayne Enterprises',
-        estimateNumber: 'DEV-WAYNE-2026-0002',
-        serviceType: 'service_bic',
-        description: 'Maintenance des capteurs sonar',
-        amountHt: 3500,
-        tvaRate: 20,
-        amountTva: 700,
-        amountTotal: 4200,
-        date: new Date('2026-07-02').toISOString(),
-        status: 'brouillon'
-      });
-
-      // Seed Expenses
-      await db.expenses.add({
-        date: new Date('2026-02-10').toISOString(),
-        merchant: 'OVHcloud',
-        category: 'Logiciels',
-        amount: 49.99,
-        description: 'Hébergement VPS Asgard CRM',
-        paymentMethod: 'carte'
-      });
-      await db.expenses.add({
-        date: new Date('2026-03-01').toISOString(),
-        merchant: 'Adobe Creative Cloud',
-        category: 'Logiciels',
-        amount: 35.99,
-        description: 'Abonnement Photoshop/Illustrator',
-        paymentMethod: 'carte'
-      });
-      await db.expenses.add({
-        date: new Date('2026-04-05').toISOString(),
-        merchant: 'SNCF',
-        category: 'Déplacements',
-        amount: 120.00,
-        description: 'Trajet Paris-Lyon rendez-vous client',
-        paymentMethod: 'carte'
-      });
-    }
-  };
-
   // Fetch all data
   const loadAllData = async () => {
-    const clientsList = await db.clients.toArray();
-    const invoicesList = await db.invoices.toArray();
-    const estimatesList = await db.estimates.toArray();
-    const expensesList = await db.expenses.toArray();
-    
-    // Sort clients by name
-    setClients(clientsList.sort((a, b) => a.companyName.localeCompare(b.companyName)));
-    // Sort invoices by date descending
-    setInvoices(invoicesList.sort((a, b) => new Date(b.date) - new Date(a.date)));
-    // Sort estimates by date descending
-    setEstimates(estimatesList.sort((a, b) => new Date(b.date) - new Date(a.date)));
-    // Sort expenses by date descending
-    setExpenses(expensesList.sort((a, b) => new Date(b.date) - new Date(a.date)));
+    // Un seul aller-retour : l'hôte renvoie les quatre tables déjà triées.
+    const snapshot = await loadSnapshot();
+
+    setClients(snapshot.clients);
+    setInvoices(snapshot.invoices);
+    setEstimates(snapshot.estimates);
+    setExpenses(snapshot.expenses);
   };
 
   // Load Settings from LocalStorage
@@ -394,7 +262,6 @@ export default function App() {
     const init = async () => {
       await migrateLegacySmtpPassword();
       setSmtpPassStored(await hasSmtpPassword());
-      await seedDatabase();
       await loadAllData();
     };
     init();
@@ -428,7 +295,7 @@ export default function App() {
   // Export all DB tables and settings as a JSON file backup
   const handleExportBackup = async () => {
     try {
-      const dbData = await exportDatabaseData();
+      const dbData = await exportBackup();
       const settings = localStorage.getItem('asgard_crm_settings');
       const backup = {
         db: dbData,
@@ -474,11 +341,12 @@ export default function App() {
             throw new Error("Le fichier importé n'est pas une sauvegarde Asgard CRM valide.");
           }
 
-          const dbData = backup.db || backup;
           const settingsData = backup.settings || null;
 
-          // 1. Import database tables
-          await importDatabaseData(dbData);
+          // 1. Reprise des tables. L'hôte rend compte de ce qu'il a fait : les
+          //    montants que l'arrondi au centime modifie, et les pièces
+          //    écartées. Le rapport est affiché plus bas.
+          const report = await importBackup(backup);
 
           // 2. Restore settings — sans le mot de passe SMTP : une sauvegarde
           //    d'avant la phase 1 le contient en clair et le réinjecterait.
@@ -489,7 +357,7 @@ export default function App() {
           // 3. Reload state
           await loadAllData();
 
-          showAlert("Succès", "Sauvegarde restaurée avec succès ! Toutes les données ont été mises à jour.");
+          showAlert("Sauvegarde restaurée", describeImport(report));
         } catch (innerError) {
           console.error(innerError);
           showAlert("Erreur", "Erreur lors du traitement du fichier de sauvegarde : " + innerError.message);
@@ -534,31 +402,17 @@ export default function App() {
     if (!runClientValidation()) return;
 
     try {
-      if (clientForm.id) {
-        // Edit
-        await db.clients.update(clientForm.id, {
-          companyName: clientForm.companyName,
-          contactName: clientForm.contactName,
-          email: clientForm.email,
-          phone: clientForm.phone,
-          address: clientForm.address
-        });
-        
-        // Update companyName in all existing invoices of this client
-        await db.invoices.where('clientId').equals(clientForm.id).modify({
-          companyName: clientForm.companyName
-        });
-      } else {
-        // Add
-        await db.clients.add({
-          companyName: clientForm.companyName,
-          contactName: clientForm.contactName,
-          email: clientForm.email,
-          phone: clientForm.phone,
-          address: clientForm.address,
-          createdAt: new Date().toISOString()
-        });
-      }
+      // La raison sociale est recopiée sur les pièces côté hôte, dans la même
+      // transaction que la mise à jour du client.
+      await saveClient({
+        id: clientForm.id ?? undefined,
+        companyName: clientForm.companyName,
+        contactName: clientForm.contactName,
+        email: clientForm.email,
+        phone: clientForm.phone,
+        address: clientForm.address,
+      });
+
       setClientModalOpen(false);
       await loadAllData();
     } catch (err) {
@@ -571,7 +425,7 @@ export default function App() {
       "Supprimer le client",
       "Êtes-vous sûr de vouloir supprimer ce client ? Toutes ses factures associées resteront dans l'historique mais déconnectées.",
       async () => {
-        await db.clients.delete(id);
+        await deleteClient(id);
         await loadAllData();
       }
     );
@@ -612,21 +466,19 @@ export default function App() {
     );
     const date = new Date().toISOString();
 
-    // Auto-generate invoice number
-    const invoiceNumber = await generateInvoiceNumber(selectedClient.companyName, date);
-
     try {
-      await db.invoices.add({
+      // Le numéro est attribué par la base, dans la transaction d'insertion
+      // (défaut D3) : l'interface ne peut plus en proposer un.
+      await createInvoice({
         clientId: selectedClient.id,
         companyName: selectedClient.companyName,
-        invoiceNumber,
         serviceType: invoiceForm.serviceType,
         description: invoiceForm.description,
         amountHt,
         tvaRate,
         amountTva,
         amountTotal,
-        date
+        date,
       });
 
       setInvoiceModalOpen(false);
@@ -641,9 +493,17 @@ export default function App() {
       "Supprimer la facture",
       "Êtes-vous sûr de vouloir supprimer cette facture ? Cette action est irréversible.",
       async () => {
-        await db.invoices.delete(id);
+        const outcome = await deleteInvoices([id]);
         setSelectedInvoiceIds(prev => prev.filter(item => item !== id));
         await loadAllData();
+        if (outcome.archived > 0) {
+          showAlert(
+            "Facture archivée",
+            "Cette facture a été émise : elle est retirée de la liste mais conservée. " +
+            "Le code de commerce impose dix ans de conservation — une facture émise " +
+            "s'annule par un avoir, elle ne se supprime pas."
+          );
+        }
       }
     );
   };
@@ -655,9 +515,16 @@ export default function App() {
       `Êtes-vous sûr de vouloir supprimer les ${selectedInvoiceIds.length} factures sélectionnées ? Cette action est irréversible.`,
       async () => {
         try {
-          await db.invoices.bulkDelete(selectedInvoiceIds);
+          const outcome = await deleteInvoices(selectedInvoiceIds);
           setSelectedInvoiceIds([]);
           await loadAllData();
+          if (outcome.archived > 0) {
+            showAlert(
+              "Factures archivées",
+              `${outcome.archived} facture(s) émise(s) ont été retirées de la liste mais conservées, ` +
+              `comme l'impose le code de commerce. ${outcome.discarded} brouillon(s) supprimé(s).`
+            );
+          }
         } catch (err) {
           console.error(err);
         }
@@ -666,7 +533,7 @@ export default function App() {
   };
 
   const handleOpenSendEmail = async (invoice, type = DOCUMENT_KINDS.INVOICE) => {
-    const client = await db.clients.get(invoice.clientId);
+    const client = clients.find(c => c.id === invoice.clientId);
     const draft = buildEmailDraft(invoice, type, client, businessSettings, defaultSettings);
 
     setEmailForm({ ...draft, invoice, type });
@@ -690,7 +557,7 @@ export default function App() {
     try {
       const invoice = emailForm.invoice;
       const isInvoice = isInvoiceKind(emailForm.type);
-      let client = await db.clients.get(invoice.clientId);
+      let client = clients.find(c => c.id === invoice.clientId);
       if (!client) {
         client = {
           companyName: invoice.companyName,
@@ -781,7 +648,7 @@ export default function App() {
 
   const handleExportPDF = async (invoice) => {
     // Find client details (even if client was deleted, we fallback gracefully using the invoice stored metadata)
-    let client = await db.clients.get(invoice.clientId);
+    let client = clients.find(c => c.id === invoice.clientId);
     if (!client) {
       client = {
         companyName: invoice.companyName,
@@ -847,37 +714,19 @@ export default function App() {
     const date = new Date(estimateForm.date).toISOString();
 
     try {
-      if (estimateForm.id) {
-        // Update
-        await db.estimates.update(estimateForm.id, {
-          clientId: selectedClient.id,
-          companyName: selectedClient.companyName,
-          serviceType: estimateForm.serviceType,
-          description: estimateForm.description,
-          amountHt,
-          tvaRate,
-          amountTva,
-          amountTotal,
-          date,
-          status: estimateForm.status
-        });
-      } else {
-        // Add new
-        const estimateNumber = await generateEstimateNumber(selectedClient.companyName, date);
-        await db.estimates.add({
-          clientId: selectedClient.id,
-          companyName: selectedClient.companyName,
-          estimateNumber,
-          serviceType: estimateForm.serviceType,
-          description: estimateForm.description,
-          amountHt,
-          tvaRate,
-          amountTva,
-          amountTotal,
-          date,
-          status: 'brouillon'
-        });
-      }
+      await saveEstimate({
+        id: estimateForm.id ?? undefined,
+        clientId: selectedClient.id,
+        companyName: selectedClient.companyName,
+        serviceType: estimateForm.serviceType,
+        description: estimateForm.description,
+        amountHt,
+        tvaRate,
+        amountTva,
+        amountTotal,
+        date,
+        status: estimateForm.id ? estimateForm.status : 'brouillon',
+      });
 
       setEstimateModalOpen(false);
       await loadAllData();
@@ -893,14 +742,20 @@ export default function App() {
       "Supprimer le devis",
       "Êtes-vous sûr de vouloir supprimer ce devis ? Cette action est irréversible.",
       async () => {
-        await db.estimates.delete(id);
+        const outcome = await deleteEstimate(id);
         await loadAllData();
+        if (outcome.archived > 0) {
+          showAlert(
+            "Devis archivé",
+            "Ce devis a déjà été envoyé ou accepté : il est retiré de la liste mais conservé."
+          );
+        }
       }
     );
   };
 
   const handleExportEstimatePDF = async (est) => {
-    let client = await db.clients.get(est.clientId);
+    let client = clients.find(c => c.id === est.clientId);
     if (!client) {
       client = { companyName: est.companyName, contactName: 'Client', email: 'N/A', phone: 'N/A', address: 'N/A' };
     }
@@ -913,29 +768,13 @@ export default function App() {
       `Voulez-vous convertir le devis ${est.estimateNumber} en facture ? Un nouveau numéro de facture sera généré automatiquement.`,
       async () => {
         try {
-          const date = new Date().toISOString();
-          const invoiceNumber = await generateInvoiceNumber(est.companyName, date);
-          
-          await db.invoices.add({
-            clientId: est.clientId,
-            companyName: est.companyName,
-            invoiceNumber,
-            serviceType: est.serviceType,
-            description: est.description,
-            amountHt: est.amountHt,
-            tvaRate: est.tvaRate,
-            amountTva: est.amountTva,
-            amountTotal: est.amountTotal,
-            date,
-            status: 'brouillon'
-          });
-
-          // Mark estimate as accepted
-          await db.estimates.update(est.id, { status: 'accepte' });
+          // Facture créée et devis marqué accepté dans la même transaction :
+          // un échec ne peut pas laisser un devis accepté sans facture.
+          const invoice = await convertEstimate(est.id);
 
           await loadAllData();
           setActiveTab('invoices');
-          showAlert("Conversion réussie !", `Le devis a été converti en facture ${invoiceNumber} et enregistré en brouillon.`);
+          showAlert("Conversion réussie !", `Le devis a été converti en facture ${invoice.invoiceNumber} et enregistré en brouillon.`);
         } catch (err) {
           console.error(err);
           showAlert("Erreur", `Erreur lors de la conversion : ${err.message}`);
@@ -987,25 +826,16 @@ export default function App() {
     const date = new Date(expenseForm.date).toISOString();
 
     try {
-      if (expenseForm.id) {
-        await db.expenses.update(expenseForm.id, {
-          merchant: expenseForm.merchant,
-          category: expenseForm.category,
-          amount,
-          description: expenseForm.description,
-          paymentMethod: expenseForm.paymentMethod,
-          date
-        });
-      } else {
-        await db.expenses.add({
-          merchant: expenseForm.merchant,
-          category: expenseForm.category,
-          amount,
-          description: expenseForm.description,
-          paymentMethod: expenseForm.paymentMethod,
-          date
-        });
-      }
+      await saveExpense({
+        id: expenseForm.id ?? undefined,
+        merchant: expenseForm.merchant,
+        category: expenseForm.category,
+        amount,
+        description: expenseForm.description,
+        paymentMethod: expenseForm.paymentMethod,
+        date,
+      });
+
       setExpenseModalOpen(false);
       await loadAllData();
       showAlert("Succès", "Dépense enregistrée !");
@@ -1020,7 +850,7 @@ export default function App() {
       "Supprimer la dépense",
       "Êtes-vous sûr de vouloir supprimer cette dépense ?",
       async () => {
-        await db.expenses.delete(id);
+        await deleteExpense(id);
         await loadAllData();
       }
     );
@@ -1040,10 +870,10 @@ export default function App() {
   const handleSavePayment = async (e) => {
     e.preventDefault();
     try {
-      await db.invoices.update(paymentForm.invoiceId, {
-        status: 'payee',
+      await recordPayment({
+        invoiceId: paymentForm.invoiceId,
         paymentDate: new Date(paymentForm.paymentDate).toISOString(),
-        paymentMethod: paymentForm.paymentMethod
+        paymentMethod: paymentForm.paymentMethod,
       });
       setPaymentModalOpen(false);
       await loadAllData();
@@ -1056,7 +886,7 @@ export default function App() {
 
   const handleMarkInvoiceAsSent = async (id) => {
     try {
-      await db.invoices.update(id, { status: 'envoyee' });
+      await setInvoiceStatus(id, 'envoyee');
       await loadAllData();
     } catch (err) {
       console.error(err);

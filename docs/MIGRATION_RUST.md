@@ -163,7 +163,9 @@ Le frontend n'est pas touché. Seuls le shell et les deux IPC changent.
 
 **Leçon pour les phases suivantes :** vérifier qu'un processus démarre ne prouve rien sur ce qu'il affiche. Les binaires de bureau se vérifient en capturant la fenêtre.
 
-**Mesures relevées sur la compilation release :**
+**Mesure après la phase 2 :** le binaire passe de 4,22 à 5,66 Mo — `sqlx` et le moteur SQLite embarqué. La base elle-même vit à part, dans `%APPDATA%\com.asgard.crmsgard-crm.sqlite`.
+
+**Mesures relevées sur la compilation release (phase 1) :**
 
 | | Avant (estimé) | Après (mesuré) |
 |---|---|---|
@@ -175,7 +177,12 @@ L'installeur est aussi léger parce que Tauri n'embarque pas WebView2 : il utili
 
 Les 30 Mo ne couvrent que le processus hôte : les processus WebView2 enfants n'ont pas pu être attribués proprement sur la machine de test, où d'autres applications utilisent le même moteur. Le total réel est supérieur, tout en restant très en deçà d'Electron, puisque le moteur est partagé avec le système au lieu d'être embarqué.
 
-### Phase 2 — IndexedDB vers SQLite *(5-7 j)*
+### Phase 2 — IndexedDB vers SQLite *(5-7 j)* OK **livree**
+
+> **Livre** — `src-tauri/src/db/` (schema, depot, numerotation, reprise, jeu de
+> demonstration), 26 tests Rust supplementaires. `src/db.js` n'est plus un schema
+> Dexie mais un adaptateur vers les commandes de l'hote ; `dexie` est retire du
+> `package.json`. `App.jsx` passe de 1 748 a 1 656 lignes : le jeu de demonstration (182 lignes) s'en va, mais le compte rendu de reprise et les messages d'archivage s'ajoutent.
 
 1. Schéma SQL : montants en **centimes (`INTEGER`)**, `deleted_at TEXT NULL`, table `document_sequences(kind, year, next_value)`, index sur `(payment_date)` et `(client_id)`. Migrations versionnées `sqlx::migrate!`.
 2. Commandes Tauri CRUD renvoyant **la même forme d'objets que Dexie** (montants reconvertis en nombre décimal à la frontière) : aucun composant React n'est modifié, seul `src/db.js` devient un adaptateur vers `invoke()`.
@@ -252,7 +259,7 @@ Leptos 0.7 (CSR) ou Dioxus 0.6, CSS conservé à l'identique, types partagés de
 |---|---|---|
 | 0 — Filet de sécurité ✅ | 3-4 j | D7, D9 |
 | 1 — Coquille Tauri ✅ | 5-7 j | D1, D2, D10 |
-| 2 — SQLite | 5-7 j | D4, D6 |
+| 2 — SQLite OK | 5-7 j | D3, D4, D6 (+ D5 amorce) |
 | 3 — Noyau métier | 5-7 j | D3, D5, D8 |
 | 4 — PDF & e-mail | 4-6 j | — |
 | **Total phases 0-4** | **22-31 j** (≈ 5-6 semaines) | **les 10 défauts** |

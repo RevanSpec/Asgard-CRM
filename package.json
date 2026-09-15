@@ -18,7 +18,6 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
-    "dexie": "^4.4.4",
     "jspdf": "^4.2.1",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"

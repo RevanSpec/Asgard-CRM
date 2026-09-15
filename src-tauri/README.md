@@ -56,6 +56,31 @@ La règle sur la boucle locale est une **égalité stricte**, comme en JavaScrip
 `::1`, `LOCALHOST` et `localhost.evil.com` ne sont pas exemptés — un test le
 vérifie explicitement.
 
+## Base de données (phase 2)
+
+`src/db/` remplace Dexie / IndexedDB par un fichier SQLite du répertoire de
+données applicatif. Quatre défauts tombent avec ce changement :
+
+| Défaut | Ce qui change |
+|---|---|
+| **D6** | Un fichier, copiable et inspectable. IndexedDB vivait dans le profil du moteur de rendu et disparaissait avec lui. |
+| **D5** | Montants en centimes (`INTEGER`), plus en flottants. Un `REAL` SQLite étant un `f64`, s'en servir aurait reconduit le problème. |
+| **D4** | `deleted_at` sur les pièces. Une facture émise s'archive, elle ne s'efface pas — conservation dix ans, art. L123-22 du code de commerce. Un brouillon, sans valeur comptable, disparaît réellement. |
+| **D3** | `document_sequences` incrémentée dans la transaction d'insertion, doublée d'une contrainte `UNIQUE` sur le numéro. |
+
+### Deux points de vigilance
+
+**La séquence repart du plus grand numéro émis, jamais du nombre de lignes.**
+Une base amputée de quelques pièces compte moins de lignes que de numéros
+attribués ; repartir du compte réattribuerait des numéros déjà utilisés, soit
+exactement D3. `seed_sequence_from_existing` s'en charge et un test le vérifie.
+
+**Le jeu de démonstration s'ouvre en `BEGIN IMMEDIATE`.** Une transaction SQLite
+ordinaire est *deferred* : elle ne prend qu'un verrou de lecture et ne tente de
+passer en écriture qu'au premier `INSERT`. Deux appels simultanés lisaient donc
+tous deux « base vide » puis se bloquaient mutuellement — un test de concurrence
+a fait apparaître le « database is deadlocked ».
+
 ## Commandes exposées
 
 | Commande | Rôle |
@@ -65,6 +90,17 @@ vérifie explicitement.
 | `set_smtp_password` | Écrit le secret dans le trousseau (chaîne vide = efface) |
 | `has_smtp_password` | Dit si un secret existe, sans le divulguer |
 | `clear_smtp_password` | Supprime le secret |
+| `load_snapshot` | Charge les quatre tables en un aller-retour |
+| `save_client` / `delete_client` | Création, mise à jour, suppression |
+| `create_invoice` | Crée une facture et lui attribue son numéro |
+| `set_invoice_status` / `record_payment` | Statut et règlement |
+| `delete_invoices` | Archive les pièces émises, efface les brouillons |
+| `save_estimate` / `set_estimate_status` / `delete_estimate` | Devis |
+| `convert_estimate` | Devis vers facture, atomique |
+| `save_expense` / `delete_expense` | Dépenses |
+| `export_backup` / `import_backup` | Sauvegarde JSON, avec rapport d'écarts |
+| `backup_to_file` | Copie atomique par `VACUUM INTO` |
+| `database_path` | Où vit le fichier |
 
 Les deux premières renvoient `{ success, messageId?, error? }` — la forme que
 le JSX attendait déjà des handlers Electron, pour ne pas toucher aux vues.
