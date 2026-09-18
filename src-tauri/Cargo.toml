@@ -16,6 +16,7 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # Logique metier : montants, cotisations, seuils, agregats (phase 3).
 asgard-core = { path = "../crates/asgard-core" }
+asgard-ipc = { path = "../crates/asgard-ipc" }
 asgard-pdf = { path = "../crates/asgard-pdf" }
 
 tauri = { version = "2", features = [] }

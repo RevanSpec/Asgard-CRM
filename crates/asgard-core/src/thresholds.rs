@@ -10,14 +10,14 @@
 //! au barème de 2027. `for_year` retient le barème connu le plus récent qui ne
 //! soit pas postérieur à l'exercice demandé.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::model::{Invoice, Status};
 use crate::money::{round_cents, Money};
 use rust_decimal_macros::dec;
 
 /// Barème d'une famille d'activité pour un exercice.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Limits {
     /// Seuil de la franchise en base de TVA.
@@ -32,7 +32,7 @@ pub struct Limits {
     pub micro_watch: Money,
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Schedule {
     pub year: i32,
@@ -78,7 +78,7 @@ pub fn for_year(year: i32) -> &'static Schedule {
 ///
 /// Tout ce qui n'est pas de la vente de marchandises compte comme service : les
 /// BNC et les BIC de prestation partagent le même plafond.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnnualCa {
     pub service: Money,
@@ -112,7 +112,7 @@ pub fn annual_ca(invoices: &[Invoice], year: i32) -> AnnualCa {
 }
 
 /// Une jauge de l'onglet « Seuils de Chiffre d'Affaires ».
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Gauge {
     pub ca: Money,
@@ -148,7 +148,7 @@ fn gauge(ca: Money, limits: &Limits) -> Gauge {
     }
 }
 
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Gauges {
     pub year: i32,
@@ -167,7 +167,7 @@ pub fn gauges(invoices: &[Invoice], year: i32) -> Gauges {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum AlertLevel {
     Warning,
@@ -179,7 +179,7 @@ pub enum AlertLevel {
 /// Le texte est produit ici plutôt que dans le JSX : c'est du contenu
 /// réglementaire, il change avec les barèmes, et le laisser dans le rendu
 /// garantissait qu'il divergerait des montants réellement appliqués.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Alert {
     #[serde(rename = "type")]

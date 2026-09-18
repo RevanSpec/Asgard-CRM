@@ -239,11 +239,25 @@ Les 30 Mo ne couvrent que le processus hôte : les processus WebView2 enfants n'
 - **Les exports quittent enfin la page.** Le point resté ouvert depuis la phase 1 est traité : PDF, livre des recettes et sauvegarde JSON s'écrivent désormais par le sélecteur de fichiers du système, côté Rust, au lieu d'un `<a download>` sur une URL `blob:` dont le comportement sous la CSP n'avait jamais pu être vérifié.
 - **`templates.js` reste en JavaScript.** Le plan prévoyait de le déplacer. Le message d'e-mail est composé puis **relu et modifié par l'utilisateur** avant envoi : le faire côté hôte imposerait un aller-retour pour afficher un brouillon destiné à être retouché. Le PDF, lui, n'est jamais relu avant envoi.
 
-### Phase 5 — Frontend Rust *(optionnelle, 4-6 semaines)*
+### Phase 5 — Frontend Rust *(optionnelle, 4-6 semaines)* ⏳ **entamée, partielle**
+
+> **Livré** — `crates/asgard-ipc` (contrat de types partagé entre l'hôte et
+> l'interface), `crates/asgard-ui` (Leptos 0.7 en rendu client). Coquille,
+> navigation, tableau de bord et clients portés. **Cinq écrans sur sept restent
+> à porter**, et l'application empaquetée sert toujours la version React.
 
 Leptos 0.7 (CSR) ou Dioxus 0.6, CSS conservé à l'identique, types partagés depuis `asgard-core` — plus de désynchronisation possible entre les formes d'objets du front et du back.
 
 **À ne lancer que si** le besoin de typage de bout en bout devient tangible. Après la phase 4, React n'est plus qu'une couche de présentation : le garder est un choix parfaitement défendable.
+
+**Ce que l'exécution a montré :**
+
+- **Le bénéfice annoncé est réel, et c'est le seul.** `asgard-ipc` est compilé par l'hôte *et* par l'interface : un champ renommé d'un côté ne compile plus de l'autre. Le passage a d'ailleurs révélé immédiatement que les types de sortie ne dérivaient que `Serialize` — l'interface ne pouvait pas les lire. En JavaScript, cet écart ne se serait vu qu'à l'exécution.
+- **Le poids joue contre cette phase, mais moins qu'il n'y paraît.** En profil de développement le WebAssembly pèse 4 Mo, ce qui inquiète ; en release il tombe à **695 Ko**, plus 38 Ko de liaison JavaScript. À comparer aux **289 Ko** du bundle React — sauf que ces 695 Ko ne couvrent que **deux écrans sur sept**. Porter le reste ajoutera peu, l'essentiel du poids étant le moteur Leptos et la bibliothèque standard, mais le compte final restera au-dessus de React. Sur une application de bureau servie localement le temps de chargement ne se remarque pas ; l'argument « plus léger » ne tient simplement pas.
+- **Le thème se réutilise tel quel**, ce qui supprime la moitié du risque : `index.html` charge `src/index.css` et `src/App.css` sans modification, et le balisage reprend les mêmes classes. Un écart a suffi à le prouver — écrire la barre latérale avec des `<button>` au lieu des `<li>` de l'original a fait surgir les styles par défaut du navigateur, que la feuille de style n'avait jamais eu à neutraliser.
+- **Le reste est mécanique mais long.** `clients.rs` sert de gabarit — recherche, tableau, formulaire, appel, rechargement. Restent `ComptaTab` et `SettingsTab`, environ 400 lignes de JSX chacun, plus les onglets Devis, Factures et Dépenses.
+
+*Critère de sortie* : **non atteint.** `tauri.conf.json` pointe toujours sur Vite, et c'est délibéré — basculer maintenant priverait l'utilisateur de cinq écrans sur sept.
 
 ---
 
@@ -289,7 +303,7 @@ Leptos 0.7 (CSR) ou Dioxus 0.6, CSS conservé à l'identique, types partagés de
 | 3 — Noyau métier ✅ | 5-7 j | D5 (fin), D8 |
 | 4 — PDF & e-mail ✅ | 4-6 j | — |
 | **Total phases 0-4** | **22-31 j** (≈ 5-6 semaines) | **les 10 défauts** |
-| 5 — Frontend Rust *(option)* | +4-6 semaines | — |
+| 5 — Frontend Rust ⏳ *(partielle)* | +4-6 semaines | — |
 
 **Gains attendus à l'issue de la phase 4**
 

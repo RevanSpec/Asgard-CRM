@@ -5,7 +5,7 @@
 # n'est que l'hôte qui l'expose à l'interface.
 [workspace]
 resolver = "2"
-members = ["src-tauri", "crates/asgard-core", "crates/asgard-pdf"]
+members = ["src-tauri", "crates/asgard-core", "crates/asgard-ipc", "crates/asgard-pdf", "crates/asgard-ui"]
 
 [workspace.dependencies]
 # `serde-float` serialise les Decimal en nombres JSON et non en chaines.
@@ -33,3 +33,8 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+# L'interface est compilee en WebAssembly : `opt-level = "s"` y compte double,
+# chaque kilo-octet devant etre telecharge et compile par le moteur.
+[profile.release.package.asgard-ui]
+opt-level = "s"

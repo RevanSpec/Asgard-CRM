@@ -12,7 +12,10 @@
 //!   d'unicité (défaut D3).
 
 pub mod backup;
-pub mod model;
+/// Les formes échangées avec l'interface vivent dans `asgard-ipc`, un crate
+/// que l'hôte **et** l'interface compilent : c'est ce qui rend impossible leur
+/// divergence silencieuse.
+pub use asgard_ipc as model;
 pub mod money;
 pub mod numbering;
 pub mod repo;
