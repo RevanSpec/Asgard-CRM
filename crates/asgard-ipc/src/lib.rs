@@ -7,7 +7,12 @@
 
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+// Chaque type porte `Serialize` **et** `Deserialize` : l'hôte renvoie les uns et
+// reçoit les autres, l'interface fait l'inverse. Les séparer obligerait à
+// deviner qui sérialise quoi, et c'est exactement l'ambiguïté que ce crate
+// supprime.
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Client {
     pub id: i64,
@@ -20,7 +25,7 @@ pub struct Client {
 }
 
 /// Saisie d'un client. `id` absent = création.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ClientInput {
     #[serde(default)]
@@ -36,7 +41,7 @@ pub struct ClientInput {
     pub address: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Invoice {
     pub id: i64,
@@ -57,7 +62,7 @@ pub struct Invoice {
     pub payment_method: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Estimate {
     pub id: i64,
@@ -74,7 +79,7 @@ pub struct Estimate {
     pub status: String,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Expense {
     pub id: i64,
@@ -91,7 +96,7 @@ pub struct Expense {
 /// Le numéro de pièce n'y figure pas : il est attribué par la base, dans la
 /// transaction d'insertion. L'interface ne peut plus en proposer un, ce qui
 /// ferme la porte au défaut D3 côté appelant.
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DocumentInput {
     #[serde(default)]
@@ -123,7 +128,7 @@ impl DocumentInput {
     }
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpenseInput {
     #[serde(default)]
@@ -139,7 +144,7 @@ pub struct ExpenseInput {
     pub payment_method: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PaymentInput {
     pub invoice_id: i64,
@@ -148,7 +153,7 @@ pub struct PaymentInput {
 }
 
 /// Tout ce que l'interface charge au démarrage, en un aller-retour.
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub clients: Vec<Client>,

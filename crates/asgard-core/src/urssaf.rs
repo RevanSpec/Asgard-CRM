@@ -127,7 +127,7 @@ pub fn quarter_of(month: u32) -> u32 {
 }
 
 /// Une ligne de la déclaration.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DeclarationLine {
     pub ht: Money,
@@ -137,7 +137,7 @@ pub struct DeclarationLine {
 
 /// Déclaration d'une période : chiffre d'affaires encaissé et cotisations,
 /// ventilés par type d'activité.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Declaration {
     pub bnc: DeclarationLine,

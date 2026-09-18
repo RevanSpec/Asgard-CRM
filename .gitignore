@@ -31,3 +31,6 @@ src-tauri/target
 *.njsproj
 *.sln
 *.sw?
+
+# Bundle WebAssembly produit par trunk.
+crates/asgard-ui/dist

@@ -1,0 +1,9 @@
+[package]
+name = "asgard-ipc"
+version = "0.1.0"
+edition = "2021"
+description = "Formes échangées entre l'interface et l'hôte d'Asgard CRM"
+
+[dependencies]
+asgard-core = { path = "../asgard-core" }
+serde = { workspace = true }

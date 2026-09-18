@@ -7,7 +7,7 @@
 use chrono::Datelike;
 use sqlx::{Row, SqlitePool};
 
-use super::model::*;
+use asgard_ipc::*;
 use super::money::from_cents;
 use asgard_core::money::to_cents as decimal_to_cents;
 use super::numbering::{self, DocumentKind};

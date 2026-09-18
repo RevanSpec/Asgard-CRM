@@ -9,7 +9,7 @@
 //! [`urssaf::Basis`], et le tableau de bord expose les deux explicitement :
 //! ce qui est facturé d'un côté, ce qui est encaissé de l'autre.
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use crate::model::{Expense, Invoice, ServiceType, Settings, Status};
 use crate::money::{format_csv, round_cents, Money};
@@ -32,7 +32,7 @@ const CHART_MIN_SCALE: Money = dec!(1000);
 const CHART_HEADROOM: Money = dec!(1.15);
 
 /// Chiffre d'affaires, facturé et encaissé.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Revenue {
     /// HT encaissé — la base déclarable.
@@ -69,7 +69,7 @@ pub fn total_expenses(expenses: &[Expense]) -> Money {
 }
 
 /// Répartition du CA encaissé par type d'activité, en pourcentage.
-#[derive(Debug, Clone, Copy, Serialize)]
+#[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Breakdown {
     pub bnc: Money,
@@ -111,10 +111,13 @@ pub fn breakdown(invoices: &[Invoice]) -> Breakdown {
 }
 
 /// Séries mensuelles du graphe.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MonthlySeries {
-    pub labels: [&'static str; 12],
+    /// Libellés des mois. `Vec<String>` et non `[&'static str; 12]` : une
+    /// référence statique se sérialise mais ne se désérialise pas, et
+    /// l'interface compile désormais ces mêmes types.
+    pub labels: Vec<String>,
     pub ca_values: Vec<Money>,
     pub profit_values: Vec<Money>,
     pub max_val: Money,
@@ -167,7 +170,7 @@ pub fn monthly_series(
     let min = all.copied().fold(Money::ZERO, Money::min);
 
     MonthlySeries {
-        labels: MONTH_LABELS,
+        labels: MONTH_LABELS.iter().map(|m| m.to_string()).collect(),
         ca_values,
         profit_values,
         max_val: round_cents(max * CHART_HEADROOM),
@@ -175,7 +178,7 @@ pub fn monthly_series(
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct CategorySlice {
     pub key: String,
@@ -184,7 +187,7 @@ pub struct CategorySlice {
     pub pct: Money,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpenseBreakdown {
     pub total: Money,
@@ -282,7 +285,7 @@ pub fn recettes_csv_filename(year: i32) -> String {
 }
 
 /// Tout ce que le tableau de bord affiche, en un seul calcul.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Dashboard {
     pub revenue: Revenue,

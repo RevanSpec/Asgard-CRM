@@ -20,7 +20,7 @@ mod secrets;
 use tauri::Manager;
 
 use db::backup::{ImportReport, LegacyBackup};
-use db::model::*;
+use asgard_ipc::*;
 use db::repo::{self, DeleteOutcome};
 use db::{Db, DbError};
 use mail::{EmailData, SendOutcome, SmtpConfig};

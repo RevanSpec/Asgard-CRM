@@ -1,0 +1,28 @@
+[package]
+name = "asgard-ui"
+version = "0.1.0"
+edition = "2021"
+description = "Interface d'Asgard CRM — Leptos, compilée en WebAssembly"
+
+[dependencies]
+asgard-core = { path = "../asgard-core" }
+asgard-ipc = { path = "../asgard-ipc" }
+
+leptos = { version = "0.7", features = ["csr"] }
+serde = { workspace = true }
+serde_json = { workspace = true }
+serde-wasm-bindgen = "0.6"
+wasm-bindgen = "0.2"
+js-sys = "0.3"
+wasm-bindgen-futures = "0.4"
+console_error_panic_hook = "0.1"
+
+[dependencies.web-sys]
+version = "0.3"
+features = ["HtmlInputElement", "HtmlSelectElement", "HtmlTextAreaElement", "Window", "Storage"]
+
+[dev-dependencies]
+# `dec!` s'etend en `rust_decimal::Decimal::...` : le crate doit etre une
+# dependance directe, pas seulement transitive via asgard-core.
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }

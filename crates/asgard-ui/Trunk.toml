@@ -1,0 +1,12 @@
+[build]
+target = "index.html"
+dist = "dist"
+
+[watch]
+# Le thème vit encore dans src/ : le surveiller évite d'avoir à relancer la
+# compilation à chaque retouche de style.
+watch = ["src", "index.html", "../../src/index.css", "../../src/App.css"]
+
+[serve]
+port = 5174
+open = false
