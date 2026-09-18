@@ -180,3 +180,43 @@ export async function loadUrssafDeclaration(settings, period) {
 export async function loadRecettesCsv() {
   return call('recettes_csv', undefined, '');
 }
+
+// ------------------------------------------------------------ pièces et envois
+
+/**
+ * Enregistre une pièce en PDF, après le sélecteur de fichiers du système.
+ *
+ * Phase 4 : le document est produit par l'hôte, plus par jsPDF. Il n'est plus
+ * téléchargé par la page via un `<a download>` sur une URL `blob:` — chemin
+ * dont le comportement sous la CSP de Tauri n'avait jamais pu être vérifié —
+ * mais écrit sur le disque côté Rust.
+ *
+ * Renvoie le chemin choisi, ou `null` si l'utilisateur a renoncé.
+ */
+export async function exportDocument(kind, id, issuer) {
+  return call('export_document', { kind, id, issuer }, null);
+}
+
+/** Enregistre un contenu texte — livre des recettes, sauvegarde JSON. */
+export async function exportText(contents, suggestedName, extension) {
+  return call('export_text', { contents, suggestedName, extension }, null);
+}
+
+/**
+ * Envoie une pièce par e-mail, pièce jointe comprise.
+ *
+ * Ni le PDF ni le mot de passe SMTP ne traversent la frontière : l'hôte lit la
+ * pièce en base, produit le document et l'attache lui-même.
+ */
+export async function sendDocument(kind, id, issuer, smtpConfig, message) {
+  return call(
+    'send_document',
+    { kind, id, issuer, smtpConfig, message },
+    { success: false, error: "Envoi indisponible hors de l'application de bureau." },
+  );
+}
+
+/** Adresse enregistrée du client d'une pièce, pour pré-remplir le formulaire. */
+export async function documentRecipient(kind, id) {
+  return call('document_recipient', { kind, id }, null);
+}

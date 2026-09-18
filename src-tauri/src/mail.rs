@@ -6,7 +6,6 @@
 //! silencieusement l'envoi chez les utilisateurs de Bridge, qui est le cas
 //! d'usage documenté dans le README.
 
-use base64::Engine;
 use lettre::message::{header::ContentType, Attachment, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::client::{Tls, TlsParameters};
@@ -57,10 +56,13 @@ pub struct EmailData {
     pub text: String,
     #[serde(default)]
     pub filename: Option<String>,
-    /// PDF encodé en base64, produit par jsPDF côté interface.
-    /// Disparaîtra en phase 4, quand le PDF sera généré côté Rust.
-    #[serde(default)]
-    pub pdf_base64: Option<String>,
+    /// PDF déjà produit, en octets bruts.
+    ///
+    /// Phase 4 : le document était auparavant encodé en base64 par l'interface
+    /// et traversait l'IPC. Il est désormais produit par l'hôte, qui l'attache
+    /// sans détour.
+    #[serde(default, skip)]
+    pub attachment: Option<Vec<u8>>,
 }
 
 /// Résultat renvoyé à l'interface. La forme est identique à celle que
@@ -96,9 +98,6 @@ pub enum MailError {
         #[source]
         source: lettre::address::AddressError,
     },
-
-    #[error("Pièce jointe illisible : {0}")]
-    Attachment(#[from] base64::DecodeError),
 
     #[error("Message mal formé : {0}")]
     Build(#[from] lettre::error::Error),
@@ -162,11 +161,12 @@ fn build_message(config: &SmtpConfig, data: &EmailData) -> Result<Message, MailE
 
     let body = SinglePart::plain(data.text.clone());
 
-    match (&data.pdf_base64, &data.filename) {
-        (Some(encoded), Some(filename)) if !encoded.is_empty() => {
-            let bytes = base64::engine::general_purpose::STANDARD.decode(encoded)?;
-            let attachment = Attachment::new(filename.clone())
-                .body(bytes, ContentType::parse("application/pdf").expect("type MIME constant"));
+    match (&data.attachment, &data.filename) {
+        (Some(bytes), Some(filename)) if !bytes.is_empty() => {
+            let attachment = Attachment::new(filename.clone()).body(
+                bytes.clone(),
+                ContentType::parse("application/pdf").expect("type MIME constant"),
+            );
 
             Ok(builder.multipart(MultiPart::mixed().singlepart(body).singlepart(attachment))?)
         }
@@ -252,7 +252,7 @@ mod tests {
             subject: "Facture FAC-STARKINDUS-2026-0001".into(),
             text: "Bonjour,".into(),
             filename: Some("FAC-STARKINDUS-2026-0001.pdf".into()),
-            pdf_base64: Some(base64::engine::general_purpose::STANDARD.encode(b"%PDF-1.3 fake")),
+            attachment: Some(b"%PDF-1.3 fake".to_vec()),
         };
 
         let raw = String::from_utf8(
@@ -274,7 +274,7 @@ mod tests {
             subject: "Relance".into(),
             text: "Bonjour,".into(),
             filename: None,
-            pdf_base64: None,
+            attachment: None,
         };
 
         let raw = String::from_utf8(
@@ -296,7 +296,7 @@ mod tests {
             subject: "Test".into(),
             text: "corps".into(),
             filename: None,
-            pdf_base64: None,
+            attachment: None,
         };
 
         let raw = String::from_utf8(build_message(&cfg, &data).unwrap().formatted()).unwrap();
@@ -310,7 +310,7 @@ mod tests {
             subject: "Test".into(),
             text: "corps".into(),
             filename: None,
-            pdf_base64: None,
+            attachment: None,
         };
 
         let error = build_message(&config("localhost", "none"), &data).unwrap_err();
