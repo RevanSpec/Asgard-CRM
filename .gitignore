@@ -13,6 +13,14 @@ dist-ssr
 dist_electron
 *.local
 
+# Sortie de compilation Rust.
+#
+# Depuis la phase 3, le Cargo.toml de la racine declare un espace de travail :
+# les artefacts vont dans /target a la racine, et non plus dans src-tauri/target.
+# Sans cette ligne, `git add -A` tente de suivre plusieurs gigaoctets.
+/target
+src-tauri/target
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

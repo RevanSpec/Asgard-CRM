@@ -1,7 +1,23 @@
 import React from 'react';
-import { urssafDeclaration } from '../domain/urssaf';
-import { thresholdGauges } from '../domain/thresholds';
-import { buildRecettesCsv, recettesCsvFilename, getRecettesLedger } from '../domain/reporting';
+import { loadRecettesCsv } from '../db';
+
+/**
+ * Tri d'affichage du registre.
+ *
+ * Purement visuel : le livre des recettes réglementaire est produit par l'hôte
+ * (`loadRecettesCsv`), dans l'ordre chronologique que la loi impose. Ici on
+ * montre le plus récent en premier, ce qui est plus commode à l'écran.
+ */
+function collectedInvoices(invoices, newestFirst = true) {
+  const sign = newestFirst ? -1 : 1;
+
+  return invoices
+    .filter((invoice) => invoice.status === 'payee')
+    .slice()
+    .sort((a, b) => sign * (
+      new Date(a.paymentDate || a.date) - new Date(b.paymentDate || b.date)
+    ));
+}
 
 export default function ComptaTab({
   comptaActiveTab,
@@ -15,8 +31,9 @@ export default function ComptaTab({
   setSelectedMonth,
   selectedQuarter,
   setSelectedQuarter,
-  businessSettings,
-  showAlert
+  showAlert,
+  declaration,
+  gauges,
 }) {
   return (
     <div>
@@ -56,17 +73,20 @@ export default function ComptaTab({
             <h3 style={{ fontFamily: 'var(--font-title)' }}>Registre Chronologique des Recettes Encaissées</h3>
             <button 
               className="btn btn-secondary"
-              onClick={() => {
-                if (getRecettesLedger(invoices).length === 0) {
+              onClick={async () => {
+                if (collectedInvoices(invoices).length === 0) {
                   showAlert("Erreur", "Aucune recette encaissée à exporter.");
                   return;
                 }
 
-                const blob = new Blob([buildRecettesCsv(invoices)], { type: 'text/csv;charset=utf-8;' });
+                // Le CSV réglementaire est produit par l'hôte : séparateur,
+                // décimale, BOM et ordre chronologique y sont testés.
+                const csv = await loadRecettesCsv();
+                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
                 const url = URL.createObjectURL(blob);
                 const link = document.createElement("a");
                 link.setAttribute("href", url);
-                link.setAttribute("download", recettesCsvFilename(new Date().getFullYear()));
+                link.setAttribute("download", `Livre_des_recettes_${new Date().getFullYear()}.csv`);
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
@@ -90,7 +110,7 @@ export default function ComptaTab({
                 </tr>
               </thead>
               <tbody>
-                {getRecettesLedger(invoices, 'desc')
+                {collectedInvoices(invoices)
                   .map(inv => (
                     <tr key={inv.id}>
                       <td style={{ fontWeight: 600, color: 'var(--color-gold)' }}>
@@ -109,7 +129,7 @@ export default function ComptaTab({
                       <td style={{ fontWeight: 600 }}>{inv.amountTotal.toFixed(2)} €</td>
                     </tr>
                   ))}
-                {getRecettesLedger(invoices).length === 0 && (
+                {collectedInvoices(invoices).length === 0 && (
                   <tr>
                     <td colSpan="6" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-secondary)' }}>
                       Aucune facture n'est encore marquée comme "Payée".
@@ -180,9 +200,13 @@ export default function ComptaTab({
           {/* Calculate Period Data */}
           {(() => {
             const { bnc, bic, vente, totalCa: totalPeriodCa, totalCharges: totalPeriodCharges } =
-              urssafDeclaration(invoices, businessSettings, {
-                periodType, year: selectedYear, month: selectedMonth, quarter: selectedQuarter,
-              });
+              declaration ?? {
+                bnc: { ht: 0, rate: 0, charges: 0 },
+                bic: { ht: 0, rate: 0, charges: 0 },
+                vente: { ht: 0, rate: 0, charges: 0 },
+                totalCa: 0,
+                totalCharges: 0,
+              };
 
             const { ht: bncHt, rate: bncRate, charges: bncCharges } = bnc;
             const { ht: bicHt, rate: bicRate, charges: bicCharges } = bic;
@@ -264,8 +288,8 @@ export default function ComptaTab({
           <h3 style={{ fontFamily: 'var(--font-title)', marginBottom: '1.25rem' }}>Surveillance des Seuils (Plafonds Annuels)</h3>
           
           {(() => {
-            const currentYear = new Date().getFullYear();
-            const gauges = thresholdGauges(invoices, currentYear);
+            const currentYear = gauges?.year ?? new Date().getFullYear();
+            if (!gauges) return null;
 
             const serviceCa = gauges.service.ca;
             const venteCa = gauges.vente.ca;

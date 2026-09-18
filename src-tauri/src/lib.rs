@@ -11,6 +11,7 @@
 //! 2. Le mot de passe SMTP ne traverse plus la frontière. Il est lu dans le
 //!    trousseau de l'OS au moment de l'envoi (défaut D2).
 
+mod analytics;
 mod db;
 mod mail;
 mod secrets;
@@ -196,6 +197,53 @@ fn database_path(db: tauri::State<'_, Db>) -> String {
     db.path.to_string_lossy().to_string()
 }
 
+
+// ------------------------------------------------------------ calculs metier
+//
+// Phase 3 : les agregats ne sont plus calcules dans le JSX mais dans
+// `asgard-core`, en arithmetique decimale. L'interface ne fait plus qu'afficher.
+
+/// Tout ce que le tableau de bord montre, en un seul calcul.
+#[tauri::command]
+async fn dashboard(
+    db: tauri::State<'_, Db>,
+    settings: analytics::SettingsInput,
+    year: i32,
+) -> Result<asgard_core::reporting::Dashboard, DbError> {
+    let invoices = analytics::load_invoices(&db.pool).await?;
+    let expenses = analytics::load_expenses(&db.pool).await?;
+
+    Ok(asgard_core::reporting::dashboard(
+        &invoices,
+        &expenses,
+        &settings.into(),
+        year,
+    ))
+}
+
+/// Declaration URSSAF d'une periode, assise sur le chiffre d'affaires encaisse.
+#[tauri::command]
+async fn urssaf_declaration(
+    db: tauri::State<'_, Db>,
+    settings: analytics::SettingsInput,
+    period: asgard_core::urssaf::Period,
+) -> Result<asgard_core::urssaf::Declaration, DbError> {
+    let invoices = analytics::load_invoices(&db.pool).await?;
+
+    Ok(asgard_core::urssaf::declaration(
+        &invoices,
+        &settings.into(),
+        period,
+    ))
+}
+
+/// Livre des recettes au format CSV reglementaire.
+#[tauri::command]
+async fn recettes_csv(db: tauri::State<'_, Db>) -> Result<String, DbError> {
+    let invoices = analytics::load_invoices(&db.pool).await?;
+    Ok(asgard_core::reporting::recettes_csv(&invoices))
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -236,6 +284,9 @@ pub fn run() {
             import_backup,
             backup_to_file,
             database_path,
+            dashboard,
+            urssaf_declaration,
+            recettes_csv,
         ])
         .run(tauri::generate_context!())
         .expect("échec du démarrage d'Asgard CRM");

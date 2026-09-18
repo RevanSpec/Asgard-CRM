@@ -103,11 +103,24 @@ pub struct DocumentInput {
     pub description: String,
     pub amount_ht: f64,
     pub tva_rate: f64,
-    pub amount_tva: f64,
-    pub amount_total: f64,
     pub date: String,
     #[serde(default)]
     pub status: Option<String>,
+}
+
+impl DocumentInput {
+    /// TVA et total, recalculés à l'écriture.
+    ///
+    /// L'interface envoyait ces deux montants ; elle ne les envoie plus. Les
+    /// dériver ici garantit l'invariant `HT + TVA = TTC` dans la base, au lieu
+    /// de dépendre de la bonne foi de l'appelant — et le calcul se fait en
+    /// arithmétique décimale, pas en virgule flottante.
+    pub fn amounts(&self) -> asgard_core::money::ComputedAmounts {
+        asgard_core::compute_amounts(
+            asgard_core::from_f64(self.amount_ht),
+            asgard_core::from_f64(self.tva_rate),
+        )
+    }
 }
 
 #[derive(Debug, Deserialize)]
