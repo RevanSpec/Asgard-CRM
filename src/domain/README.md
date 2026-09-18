@@ -10,7 +10,7 @@ Ce dossier contenait sept modules à l'issue de la phase 0. Il en reste deux.
 | `reporting.js` | → [`asgard-core::reporting`](../../crates/asgard-core/src/reporting.rs) (phase 3) |
 | `numbering.js` | → [`src-tauri/src/db/numbering.rs`](../../src-tauri/src/db/numbering.rs) (phase 2) |
 | **`validation.js`** | **reste** — validation de formulaires, pas de comptabilité |
-| **`templates.js`** | **reste** — gabarits d'e-mail, jusqu'à la phase 4 |
+| **`templates.js`** | **reste** — voir ci-dessous |
 
 ## Pourquoi ces deux-là restent
 
@@ -18,7 +18,12 @@ La validation de formulaire appartient à l'interface : elle doit répondre à l
 frappe, sans aller-retour, et ses messages sont du texte d'interface. La
 déplacer coûterait de la latence pour aucun gain de justesse.
 
-Les gabarits d'e-mail suivront en phase 4, avec la génération de PDF et l'envoi.
+Les gabarits d'e-mail devaient partir en phase 4 avec le PDF. Ils restent, et
+c'est délibéré : le message est **composé puis relu et modifié par
+l'utilisateur** dans une fenêtre avant l'envoi. Substituer les jetons côté hôte
+obligerait à un aller-retour pour afficher un brouillon que l'utilisateur va de
+toute façon retoucher. Le PDF, lui, n'est jamais relu avant envoi — d'où le
+traitement différent.
 
 ## Où sont passés les golden tests
 

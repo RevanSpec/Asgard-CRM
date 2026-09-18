@@ -218,14 +218,26 @@ Les 30 Mo ne couvrent que le processus hôte : les processus WebView2 enfants n'
 - **Piège de l'espace de travail Cargo.** Déclarer un workspace déplace la sortie de compilation vers `/target` à la racine — que le `.gitignore` de `src-tauri` ne couvre pas — et fait **ignorer** le `[profile.release]` des packages membres. Le binaire est passé de 5,7 à 14,2 Mo sans autre signe qu'un avertissement noyé dans le log de compilation. Profil déplacé à la racine, `/target` ajouté au `.gitignore`.
 - **Les tests JavaScript passent de 151 à 49.** Les 102 autres n'ont pas été supprimés : ils ont changé de camp avec le code qu'ils éprouvaient.
 
-### Phase 4 — PDF et e-mail entièrement côté Rust *(4-6 j)*
+### Phase 4 — PDF et e-mail entièrement côté Rust *(4-6 j)* ✅ **livrée**
+
+> **Livré** — crate `crates/asgard-pdf` (printpdf), 22 tests dont la comparaison
+> avec les PDF archivés en phase 0. `jspdf` retiré : le bundle passe de 1,19 Mo
+> à 296 Ko, `html2canvas` disparaissant avec lui.
 
 1. Réimplémenter `pdfGenerator.js` dans `asgard-pdf`. Deux approches possibles : `printpdf` (impératif, proche du code jsPDF actuel, portage direct) ou **Typst embarqué** (gabarit déclaratif, bien plus maintenable pour les évolutions de mentions légales). Recommandation : `printpdf` pour un portage à l'identique, Typst si les gabarits doivent devenir personnalisables.
-   - Attention : jsPDF utilise les polices PDF standard (Helvetica). En Rust il faut embarquer une police (Liberation Sans) → métriques légèrement différentes. Valider page par page contre les PDF archivés en phase 0.
+   - ~~Attention : il faut embarquer une police, d'où des métriques différentes.~~ **Cette crainte était infondée** : Helvetica fait partie des quatorze polices standard du format PDF, et `printpdf` les expose comme jsPDF. Les métriques sont identiques, sans rien embarquer.
 2. L'envoi devient une commande unique `send_document(id, kind)` : le PDF est généré et attaché côté Rust, il ne transite plus en base64 à travers l'IPC.
 3. Supprimer `jspdf` du `package.json`.
 
-*Critère de sortie* : plus aucune dépendance JS hors React/Vite ; PDF visuellement conformes.
+*Critère de sortie* : plus aucune dépendance JS hors React/Vite ; PDF visuellement conformes. **Atteint.**
+
+**Précisions apportées par l'exécution :**
+
+- **Aucune police à embarquer.** Le plan annonçait des métriques divergentes et une validation page par page. Helvetica étant une police standard du format PDF, `printpdf` l'expose comme jsPDF : les métriques sont les mêmes. Les largeurs de caractères sont reprises des fichiers AFM de la spécification pour calculer l'alignement à droite, que `printpdf` ne fait pas lui-même.
+- **La comparaison porte sur le texte, pas sur les octets.** Deux générateurs ne produisent jamais les mêmes octets. Ce qui doit être identique, c'est ce que le lecteur voit : les tests extraient le texte imprimé des deux côtés et vérifient que rien ne manque. Le positionnement, lui, se lit dans le code — les coordonnées sont reprises telles quelles, et un module de mise en page retourne l'axe vertical, jsPDF comptant depuis le haut et le PDF depuis le bas.
+- **Deux encodages à gérer.** jsPDF écrit ses chaînes en littéraux `(texte) Tj`, printpdf en hexadécimal `<4153…> Tj`. Les deux sont du WinAnsi, qui coïncide avec le latin-1 **sauf** entre 0x80 et 0x9F — où se trouve le symbole euro. Décoder naïvement en latin-1 transformait chaque « € » en caractère de contrôle et faisait échouer la comparaison des montants.
+- **Les exports quittent enfin la page.** Le point resté ouvert depuis la phase 1 est traité : PDF, livre des recettes et sauvegarde JSON s'écrivent désormais par le sélecteur de fichiers du système, côté Rust, au lieu d'un `<a download>` sur une URL `blob:` dont le comportement sous la CSP n'avait jamais pu être vérifié.
+- **`templates.js` reste en JavaScript.** Le plan prévoyait de le déplacer. Le message d'e-mail est composé puis **relu et modifié par l'utilisateur** avant envoi : le faire côté hôte imposerait un aller-retour pour afficher un brouillon destiné à être retouché. Le PDF, lui, n'est jamais relu avant envoi.
 
 ### Phase 5 — Frontend Rust *(optionnelle, 4-6 semaines)*
 
@@ -275,7 +287,7 @@ Leptos 0.7 (CSR) ou Dioxus 0.6, CSS conservé à l'identique, types partagés de
 | 1 — Coquille Tauri ✅ | 5-7 j | D1, D2, D10 |
 | 2 — SQLite OK | 5-7 j | D3, D4, D6 (+ D5 amorce) |
 | 3 — Noyau métier ✅ | 5-7 j | D5 (fin), D8 |
-| 4 — PDF & e-mail | 4-6 j | — |
+| 4 — PDF & e-mail ✅ | 4-6 j | — |
 | **Total phases 0-4** | **22-31 j** (≈ 5-6 semaines) | **les 10 défauts** |
 | 5 — Frontend Rust *(option)* | +4-6 semaines | — |
 

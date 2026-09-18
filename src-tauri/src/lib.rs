@@ -13,6 +13,7 @@
 
 mod analytics;
 mod db;
+mod documents;
 mod mail;
 mod secrets;
 
@@ -37,27 +38,6 @@ fn resolve_password(config: &SmtpConfig) -> Result<String, String> {
     secrets::read()
         .map_err(|error| error.to_string())
         .map(|stored| stored.unwrap_or_default())
-}
-
-#[tauri::command]
-async fn send_email(smtp_config: SmtpConfig, email_data: EmailData) -> SendOutcome {
-    let password = match resolve_password(&smtp_config) {
-        Ok(password) => password,
-        Err(error) => return SendOutcome::failed(error),
-    };
-
-    // L'envoi SMTP est bloquant : il est déporté hors du fil principal pour ne
-    // pas figer l'interface pendant la négociation TLS.
-    let result = tauri::async_runtime::spawn_blocking(move || {
-        mail::send(&smtp_config, &email_data, &password)
-    })
-    .await;
-
-    match result {
-        Ok(Ok(message_id)) => SendOutcome::ok(Some(message_id)),
-        Ok(Err(error)) => SendOutcome::failed(error),
-        Err(error) => SendOutcome::failed(error),
-    }
 }
 
 #[tauri::command]
@@ -244,9 +224,142 @@ async fn recettes_csv(db: tauri::State<'_, Db>) -> Result<String, DbError> {
     Ok(asgard_core::reporting::recettes_csv(&invoices))
 }
 
+
+// ---------------------------------------------------------- pieces et envois
+//
+// Phase 4 : le PDF est produit par l'hote. L'interface ne fait plus que demander
+// une piece par son identifiant — plus de document encode en base64 traversant
+// l'IPC, et plus de jsPDF.
+
+use tauri_plugin_dialog::DialogExt;
+
+/// Enregistre une piece sur le disque, apres le selecteur du systeme.
+///
+/// Renvoie le chemin choisi, ou `None` si l'utilisateur a renonce. Remplace le
+/// `<a download>` sur une URL blob:, dont le comportement sous la CSP de Tauri
+/// n'avait jamais pu etre verifie.
+#[tauri::command]
+async fn export_document(
+    app: tauri::AppHandle,
+    db: tauri::State<'_, Db>,
+    kind: documents::Kind,
+    id: i64,
+    issuer: documents::IssuerInput,
+) -> Result<Option<String>, DbError> {
+    let rendered = documents::render(&db.pool, kind, id, issuer.into()).await?;
+
+    let chosen = app
+        .dialog()
+        .file()
+        .set_file_name(format!("{}.pdf", rendered.number))
+        .add_filter("Document PDF", &["pdf"])
+        .blocking_save_file();
+
+    let Some(path) = chosen else { return Ok(None) };
+    let path = path
+        .into_path()
+        .map_err(|error| DbError::Pdf(error.to_string()))?;
+
+    std::fs::write(&path, &rendered.bytes)?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+/// Enregistre un contenu texte — livre des recettes, sauvegarde JSON.
+///
+/// Meme raison que ci-dessus : ces deux exports passaient par un telechargement
+/// declenche depuis la page.
+#[tauri::command]
+async fn export_text(
+    app: tauri::AppHandle,
+    contents: String,
+    suggested_name: String,
+    extension: String,
+) -> Result<Option<String>, DbError> {
+    let chosen = app
+        .dialog()
+        .file()
+        .set_file_name(&suggested_name)
+        .add_filter("Fichier", &[extension.as_str()])
+        .blocking_save_file();
+
+    let Some(path) = chosen else { return Ok(None) };
+    let path = path
+        .into_path()
+        .map_err(|error| DbError::Pdf(error.to_string()))?;
+
+    std::fs::write(&path, contents.as_bytes())?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
+/// Envoie une piece par e-mail, piece jointe comprise.
+///
+/// Le PDF est produit ici : ni le document ni le mot de passe SMTP ne traversent
+/// la frontiere.
+#[tauri::command]
+async fn send_document(
+    db: tauri::State<'_, Db>,
+    kind: documents::Kind,
+    id: i64,
+    issuer: documents::IssuerInput,
+    smtp_config: SmtpConfig,
+    message: DocumentMessage,
+) -> Result<SendOutcome, DbError> {
+    // Le resultat est toujours `Ok` : les echecs d'envoi voyagent dans
+    // `SendOutcome`, forme que le JSX attend depuis les handlers Electron. Tauri
+    // exige neanmoins un `Result` des lors qu'une commande asynchrone emprunte
+    // un `State`.
+    let rendered = match documents::render(&db.pool, kind, id, issuer.into()).await {
+        Ok(rendered) => rendered,
+        Err(error) => return Ok(SendOutcome::failed(error)),
+    };
+
+    let password = match resolve_password(&smtp_config) {
+        Ok(password) => password,
+        Err(error) => return Ok(SendOutcome::failed(error)),
+    };
+
+    let email = EmailData {
+        to: message.to,
+        subject: message.subject,
+        text: message.text,
+        filename: Some(format!("{}.pdf", rendered.number)),
+        attachment: Some(rendered.bytes),
+    };
+
+    let result = tauri::async_runtime::spawn_blocking(move || {
+        mail::send(&smtp_config, &email, &password)
+    })
+    .await;
+
+    Ok(match result {
+        Ok(Ok(message_id)) => SendOutcome::ok(Some(message_id)),
+        Ok(Err(error)) => SendOutcome::failed(error),
+        Err(error) => SendOutcome::failed(error),
+    })
+}
+
+/// Adresse enregistree du client d'une piece, pour pre-remplir le formulaire.
+#[tauri::command]
+async fn document_recipient(
+    db: tauri::State<'_, Db>,
+    kind: documents::Kind,
+    id: i64,
+) -> Result<Option<String>, DbError> {
+    documents::recipient(&db.pool, kind, id).await
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DocumentMessage {
+    to: String,
+    subject: String,
+    text: String,
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
 
@@ -262,7 +375,6 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            send_email,
             test_smtp,
             set_smtp_password,
             has_smtp_password,
@@ -287,6 +399,10 @@ pub fn run() {
             dashboard,
             urssaf_declaration,
             recettes_csv,
+            export_document,
+            export_text,
+            send_document,
+            document_recipient,
         ])
         .run(tauri::generate_context!())
         .expect("échec du démarrage d'Asgard CRM");

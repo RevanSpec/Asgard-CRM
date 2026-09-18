@@ -32,14 +32,14 @@
 * **Frontend** : [React](https://react.dev/) + [Vite](https://vite.dev/)
 * **Base de données** : [Dexie.js](https://dexie.org/) (IndexedDB wrapper)
 * **Design** : Interface responsive moderne avec thème sombre *glassmorphism* haut de gamme.
-* **Génération PDF** : [jspdf](https://artskydj.github.io/jsPDF/docs/index.html)
+* **Génération PDF** : [printpdf](https://github.com/fschutt/printpdf) (côté Rust)
 * **Envoi d'emails** : [lettre](https://lettre.rs/) (commande Tauri, côté Rust)
 * **Secrets** : trousseau du système d'exploitation via [keyring](https://crates.io/crates/keyring)
 * **Linter** : [Oxlint](https://oxc.rs/docs/guide/usage/linter.html) (ultra rapide)
 * **Tests** : [Vitest](https://vitest.dev/) pour la logique métier, `cargo test` pour l'hôte
 
 > 🦀 Le projet migre progressivement vers Rust — voir [`docs/MIGRATION_RUST.md`](docs/MIGRATION_RUST.md).
-> Phases livrées : **0** (logique métier sous tests), **1** (coquille Tauri).
+> Phases livrées : **0** (logique métier sous tests), **1** (coquille Tauri), **2** (SQLite), **3** (noyau métier Rust), **4** (PDF et e-mail Rust).
 
 ---
 

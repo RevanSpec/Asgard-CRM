@@ -16,8 +16,14 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 # Logique metier : montants, cotisations, seuils, agregats (phase 3).
 asgard-core = { path = "../crates/asgard-core" }
+asgard-pdf = { path = "../crates/asgard-pdf" }
 
 tauri = { version = "2", features = [] }
+# Dialogue d'enregistrement natif. Corrige au passage un point reste ouvert
+# depuis la phase 1 : les exports passaient par un `<a download>` sur une URL
+# blob:, chemin que la CSP de Tauri rend incertain et qu'on ne pouvait pas
+# tester depuis l'environnement de developpement.
+tauri-plugin-dialog = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -29,7 +35,6 @@ lettre = { version = "0.11", default-features = false, features = [
     "rustls-tls",
     "rustls-platform-verifier",
 ] }
-base64 = "0.22"
 
 # Trousseau de l'OS — sort le mot de passe SMTP de localStorage (défaut D2)
 keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }

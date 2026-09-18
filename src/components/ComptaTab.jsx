@@ -1,5 +1,5 @@
 import React from 'react';
-import { loadRecettesCsv } from '../db';
+import { loadRecettesCsv, exportText } from '../db';
 
 /**
  * Tri d'affichage du registre.
@@ -79,18 +79,19 @@ export default function ComptaTab({
                   return;
                 }
 
-                // Le CSV réglementaire est produit par l'hôte : séparateur,
-                // décimale, BOM et ordre chronologique y sont testés.
+                // Le CSV réglementaire est produit par l'hôte — séparateur,
+                // décimale, BOM et ordre chronologique y sont testés — puis
+                // écrit après le sélecteur du système.
                 const csv = await loadRecettesCsv();
-                const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-                const url = URL.createObjectURL(blob);
-                const link = document.createElement("a");
-                link.setAttribute("href", url);
-                link.setAttribute("download", `Livre_des_recettes_${new Date().getFullYear()}.csv`);
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-                URL.revokeObjectURL(url);
+                const path = await exportText(
+                  csv,
+                  `Livre_des_recettes_${new Date().getFullYear()}.csv`,
+                  'csv',
+                );
+
+                if (path) {
+                  showAlert("Enregistré", `Livre des recettes enregistré : ${path}`);
+                }
               }}
             >
               Exporter en CSV (.excel)

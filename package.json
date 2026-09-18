@@ -13,12 +13,11 @@
     "lint": "oxlint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "pdf:reference": "node scripts/generate-reference-pdfs.mjs",
     "icon": "node scripts/generate-app-icon.mjs && tauri icon src-tauri/app-icon.png"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.1",
-    "jspdf": "^4.2.1",
+    "@tauri-apps/plugin-dialog": "^2.7.3",
     "react": "^19.2.7",
     "react-dom": "^19.2.7"
   },

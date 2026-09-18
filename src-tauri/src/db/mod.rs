@@ -41,6 +41,9 @@ pub enum DbError {
 
     #[error("Répertoire de données inaccessible : {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Édition du PDF impossible : {0}")]
+    Pdf(String),
 }
 
 /// Les commandes Tauri renvoient des erreurs sérialisables.

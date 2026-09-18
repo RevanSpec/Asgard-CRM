@@ -16,13 +16,10 @@ import {
   importBackup,
   loadDashboard,
   loadUrssafDeclaration,
+  exportDocument,
+  exportText,
+  sendDocument,
 } from './db';
-import {
-  exportInvoiceToPDF,
-  generateInvoicePDF,
-  exportEstimateToPDF,
-  generateEstimatePDF,
-} from './pdfGenerator';
 import {
   formatPhoneInput,
   validateClientForm,
@@ -31,8 +28,8 @@ import {
   validateExpenseForm,
   isValid,
 } from './domain/validation';
-import { buildEmailDraft, isInvoiceKind, DOCUMENT_KINDS } from './domain/templates';
-import { isDesktop, sendEmail, testSmtp, setSmtpPassword, hasSmtpPassword } from './ipc';
+import { buildEmailDraft, DOCUMENT_KINDS } from './domain/templates';
+import { isDesktop, testSmtp, setSmtpPassword, hasSmtpPassword } from './ipc';
 import Sidebar from './components/Sidebar';
 import DashboardTab from './components/DashboardTab';
 import ClientsTab from './components/ClientsTab';
@@ -351,17 +348,18 @@ export default function App() {
         backupVersion: 1,
       };
 
-      const jsonString = `data:text/json;charset=utf-8,${encodeURIComponent(JSON.stringify(backup, null, 2))}`;
-      const downloadAnchor = document.createElement('a');
-      downloadAnchor.setAttribute("href", jsonString);
-
+      // Écriture par le sélecteur du système, plutôt qu'un téléchargement
+      // déclenché depuis la page : ce chemin-là n'avait jamais pu être vérifié
+      // sous la CSP de Tauri.
       const dateStr = new Date().toISOString().split('T')[0];
-      downloadAnchor.setAttribute("download", `asgard_crm_backup_${dateStr}.json`);
-      document.body.appendChild(downloadAnchor);
-      downloadAnchor.click();
-      downloadAnchor.remove();
+      const path = await exportText(
+        JSON.stringify(backup, null, 2),
+        `asgard_crm_backup_${dateStr}.json`,
+        'json',
+      );
 
-      showAlert("Succès", "Sauvegarde exportée avec succès !");
+      if (!path) return;
+      showAlert("Succès", `Sauvegarde enregistrée : ${path}`);
     } catch (error) {
       console.error(error);
       showAlert("Erreur", "Échec de l'exportation de la sauvegarde : " + error.message);
@@ -600,48 +598,23 @@ export default function App() {
     setSendingEmail(true);
 
     try {
-      const invoice = emailForm.invoice;
-      const isInvoice = isInvoiceKind(emailForm.type);
-      let client = clients.find(c => c.id === invoice.clientId);
-      if (!client) {
-        client = {
-          companyName: invoice.companyName,
-          contactName: 'Client',
-          email: emailForm.to,
-          phone: '',
-          address: ''
-        };
-      }
-
-      // 1. Generate PDF document and get base64 string
-      const doc = isInvoice 
-        ? generateInvoicePDF(invoice, client, businessSettings)
-        : generateEstimatePDF(invoice, client, businessSettings);
-      const pdfDataUri = doc.output('datauristring');
-      const pdfBase64 = pdfDataUri.split(',')[1];
-
-      // 2. Configuration SMTP. Pas de mot de passe : l'hôte le lit dans le
-      //    trousseau de l'OS au moment de l'envoi (défaut D2).
+      // L'hôte lit la pièce en base, produit le PDF et l'attache lui-même :
+      // ni le document ni le mot de passe SMTP ne traversent la frontière.
       const smtpConfig = {
         host: businessSettings.smtpHost,
         port: businessSettings.smtpPort,
         user: businessSettings.smtpUser,
         secure: businessSettings.smtpSecure,
-        from: businessSettings.email
+        from: businessSettings.email,
       };
 
-      // 3. Prepare email data
-      const docNum = isInvoice ? invoice.invoiceNumber : invoice.estimateNumber;
-      const emailData = {
-        to: emailForm.to,
-        subject: emailForm.subject,
-        text: emailForm.text,
-        filename: `${docNum}.pdf`,
-        pdfBase64
-      };
-
-      // 4. Envoi via la commande Tauri
-      const result = await sendEmail(smtpConfig, emailData);
+      const result = await sendDocument(
+        emailForm.type,
+        emailForm.invoice.id,
+        businessSettings,
+        smtpConfig,
+        { to: emailForm.to, subject: emailForm.subject, text: emailForm.text },
+      );
 
       if (result.success) {
         setEmailModalOpen(false);
@@ -692,18 +665,9 @@ export default function App() {
   };
 
   const handleExportPDF = async (invoice) => {
-    // Find client details (even if client was deleted, we fallback gracefully using the invoice stored metadata)
-    let client = clients.find(c => c.id === invoice.clientId);
-    if (!client) {
-      client = {
-        companyName: invoice.companyName,
-        contactName: 'Client supprimé',
-        email: 'N/A',
-        phone: 'N/A',
-        address: 'N/A'
-      };
-    }
-    exportInvoiceToPDF(invoice, client, businessSettings);
+    // Le PDF est produit par l'hôte et écrit après le sélecteur du système.
+    const path = await exportDocument(DOCUMENT_KINDS.INVOICE, invoice.id, businessSettings);
+    if (path) showAlert("Enregistré", `Facture enregistrée : ${path}`);
   };
 
   // --- ESTIMATES HANDLERS ---
@@ -794,11 +758,8 @@ export default function App() {
   };
 
   const handleExportEstimatePDF = async (est) => {
-    let client = clients.find(c => c.id === est.clientId);
-    if (!client) {
-      client = { companyName: est.companyName, contactName: 'Client', email: 'N/A', phone: 'N/A', address: 'N/A' };
-    }
-    exportEstimateToPDF(est, client, businessSettings);
+    const path = await exportDocument(DOCUMENT_KINDS.ESTIMATE, est.id, businessSettings);
+    if (path) showAlert("Enregistré", `Devis enregistré : ${path}`);
   };
 
   const handleConvertEstimateToInvoice = async (est) => {

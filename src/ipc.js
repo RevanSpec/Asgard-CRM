@@ -36,17 +36,8 @@ function unavailable() {
   return { success: false, error: WEB_ONLY };
 }
 
-/**
- * Envoie un document par e-mail.
- *
- * `smtpConfig` ne porte plus de mot de passe : l'hôte le lit dans le trousseau
- * de l'OS au moment de l'envoi (défaut D2). Le secret ne traverse plus la
- * frontière.
- */
-export async function sendEmail(smtpConfig, emailData) {
-  if (!isDesktop()) return unavailable();
-  return invoke('send_email', { smtpConfig, emailData });
-}
+// Depuis la phase 4, l'envoi de documents passe par `sendDocument` (src/db.js) :
+// l'hôte produit le PDF et l'attache lui-même, plus rien ne transite en base64.
 
 /** Vérifie une configuration SMTP sans envoyer de message. */
 export async function testSmtp(smtpConfig) {

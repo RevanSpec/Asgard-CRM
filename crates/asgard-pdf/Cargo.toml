@@ -1,0 +1,16 @@
+[package]
+name = "asgard-pdf"
+version = "0.1.0"
+edition = "2021"
+description = "Génération des factures et devis d'Asgard CRM au format PDF"
+
+[dependencies]
+asgard-core = { path = "../asgard-core" }
+printpdf = "0.7"
+serde = { workspace = true }
+
+[dev-dependencies]
+# `dec!` s'etend en `rust_decimal::Decimal::...` : le crate doit etre une
+# dependance directe, pas seulement transitive via asgard-core.
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
