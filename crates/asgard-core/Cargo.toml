@@ -1,0 +1,15 @@
+[package]
+name = "asgard-core"
+version = "0.1.0"
+edition = "2021"
+description = "Logique métier d'Asgard CRM : montants, cotisations URSSAF, seuils légaux, agrégats comptables"
+
+[dependencies]
+rust_decimal = { workspace = true }
+rust_decimal_macros = { workspace = true }
+serde = { workspace = true }
+chrono = { workspace = true }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+proptest = "1"

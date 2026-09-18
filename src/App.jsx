@@ -14,6 +14,8 @@ import {
   deleteExpense,
   exportBackup,
   importBackup,
+  loadDashboard,
+  loadUrssafDeclaration,
 } from './db';
 import {
   exportInvoiceToPDF,
@@ -21,16 +23,6 @@ import {
   exportEstimateToPDF,
   generateEstimatePDF,
 } from './pdfGenerator';
-import { computeAmounts } from './domain/money';
-import { totalUrssafCharges } from './domain/urssaf';
-import { buildCaAlerts } from './domain/thresholds';
-import {
-  calculateCA,
-  calculateTotalExpenses,
-  getServiceTypeBreakdown,
-  getMonthlyFinancialsData,
-  getExpensesCategoryData,
-} from './domain/reporting';
 import {
   formatPhoneInput,
   validateClientForm,
@@ -162,11 +154,36 @@ function describeImport(report) {
   return parts.join('\n');
 }
 
+/**
+ * Valeurs affichées avant que l'hôte n'ait répondu.
+ *
+ * Le calcul est désormais asynchrone : le premier rendu précède sa réponse.
+ * Plutôt que d'égrener des `?? 0` dans le JSX, les formes vides sont déclarées
+ * une fois, avec exactement les champs que les vues attendent.
+ */
+const EMPTY_REVENUE = { ht: 0, ttc: 0, htFacture: 0, ttcFacture: 0 };
+const EMPTY_BREAKDOWN = { bnc: 0, bic: 0, vente: 0, total: 0 };
+const EMPTY_CATEGORIES = { total: 0, list: [] };
+const EMPTY_MONTHLY = {
+  labels: ['Jan', 'Fév', 'Mar', 'Avr', 'Mai', 'Jun', 'Jul', 'Aoû', 'Sep', 'Oct', 'Nov', 'Déc'],
+  caValues: Array(12).fill(0),
+  profitValues: Array(12).fill(0),
+  maxVal: 1150,
+  minVal: 0,
+};
+
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [clients, setClients] = useState([]);
   const [invoices, setInvoices] = useState([]);
   const [businessSettings, setBusinessSettings] = useState(defaultSettings);
+
+  // Agrégats calculés par l'hôte. `null` tant que la première réponse n'est pas
+  // arrivée — les vues affichent alors les formes vides déclarées plus haut.
+  const [metrics, setMetrics] = useState(null);
+
+  // Déclaration URSSAF de la période choisie, calculée par l'hôte.
+  const [declaration, setDeclaration] = useState(null);
 
   // Search filter states
   const [clientSearch, setClientSearch] = useState('');
@@ -249,6 +266,37 @@ export default function App() {
     setEstimates(snapshot.estimates);
     setExpenses(snapshot.expenses);
   };
+
+  // Les taux de cotisation et l'ACRE entrent dans le calcul : modifier les
+  // réglages doit rafraîchir les chiffres, pas seulement recharger les tables.
+  useEffect(() => {
+    let cancelled = false;
+
+    loadDashboard(businessSettings, new Date().getFullYear())
+      .then((result) => {
+        if (!cancelled && result) setMetrics(result);
+      })
+      .catch((error) => console.error('Calcul des agrégats impossible :', error));
+
+    return () => { cancelled = true; };
+  }, [invoices, expenses, businessSettings]);
+
+  // La déclaration dépend de la période choisie dans l'onglet Comptabilité.
+  useEffect(() => {
+    let cancelled = false;
+
+    const period = periodType === 'monthly'
+      ? { periodType: 'monthly', year: selectedYear, month: selectedMonth }
+      : { periodType: 'quarterly', year: selectedYear, quarter: selectedQuarter };
+
+    loadUrssafDeclaration(businessSettings, period)
+      .then((result) => {
+        if (!cancelled && result) setDeclaration(result);
+      })
+      .catch((error) => console.error('Calcul de la déclaration impossible :', error));
+
+    return () => { cancelled = true; };
+  }, [invoices, businessSettings, periodType, selectedYear, selectedMonth, selectedQuarter]);
 
   // Load Settings from LocalStorage
   useEffect(() => {
@@ -460,10 +508,9 @@ export default function App() {
     if (!runInvoiceValidation()) return;
 
     const selectedClient = clients.find(c => c.id === parseInt(invoiceForm.clientId));
-    const { amountHt, tvaRate, amountTva, amountTotal } = computeAmounts(
-      invoiceForm.amountHt,
-      invoiceForm.tvaRate,
-    );
+    // TVA et total sont dérivés par l'hôte, en arithmétique décimale : cela
+    // garantit l'invariant HT + TVA = TTC en base plutôt que de s'en remettre
+    // à ce que l'interface a bien voulu envoyer.
     const date = new Date().toISOString();
 
     try {
@@ -474,10 +521,8 @@ export default function App() {
         companyName: selectedClient.companyName,
         serviceType: invoiceForm.serviceType,
         description: invoiceForm.description,
-        amountHt,
-        tvaRate,
-        amountTva,
-        amountTotal,
+        amountHt: parseFloat(invoiceForm.amountHt),
+        tvaRate: parseFloat(invoiceForm.tvaRate),
         date,
       });
 
@@ -707,10 +752,6 @@ export default function App() {
     if (!runEstimateValidation()) return;
 
     const selectedClient = clients.find(c => c.id === parseInt(estimateForm.clientId));
-    const { amountHt, tvaRate, amountTva, amountTotal } = computeAmounts(
-      estimateForm.amountHt,
-      estimateForm.tvaRate,
-    );
     const date = new Date(estimateForm.date).toISOString();
 
     try {
@@ -720,10 +761,8 @@ export default function App() {
         companyName: selectedClient.companyName,
         serviceType: estimateForm.serviceType,
         description: estimateForm.description,
-        amountHt,
-        tvaRate,
-        amountTva,
-        amountTotal,
+        amountHt: parseFloat(estimateForm.amountHt),
+        tvaRate: parseFloat(estimateForm.tvaRate),
         date,
         status: estimateForm.id ? estimateForm.status : 'brouillon',
       });
@@ -894,17 +933,18 @@ export default function App() {
   };
 
   // --- AGRÉGATS DU TABLEAU DE BORD ---
-  // La logique vit dans src/domain : ces appels ne font que la brancher sur l'état.
-  const currentYear = new Date().getFullYear();
-
-  const { ht: totalCaHt, ttc: totalCaTtc, htFacture, ttcFacture } = calculateCA(invoices);
-  const totalUrssaf = totalUrssafCharges(invoices, businessSettings);
-  const totalExpenses = calculateTotalExpenses(expenses);
-  const netProfit = totalCaHt - totalUrssaf - totalExpenses;
-  const breakdown = getServiceTypeBreakdown(invoices);
-  const monthlyFinancials = getMonthlyFinancialsData(invoices, expenses, businessSettings, currentYear);
-  const expensesCategoryData = getExpensesCategoryData(expenses);
-  const caAlerts = buildCaAlerts(invoices, currentYear);
+  //
+  // Phase 3 : ces chiffres ne sont plus calculés ici. Ils viennent du noyau
+  // métier Rust, en arithmétique décimale, où le calcul URSSAF n'existe plus
+  // qu'en un seul exemplaire — il en avait trois, qui divergeaient.
+  const { ht: totalCaHt, ttc: totalCaTtc, htFacture } = metrics?.revenue ?? EMPTY_REVENUE;
+  const totalUrssaf = metrics?.urssafCharges ?? 0;
+  const totalExpenses = metrics?.totalExpenses ?? 0;
+  const netProfit = metrics?.netProfit ?? 0;
+  const breakdown = metrics?.breakdown ?? EMPTY_BREAKDOWN;
+  const monthlyFinancials = metrics?.monthly ?? EMPTY_MONTHLY;
+  const expensesCategoryData = metrics?.expensesByCategory ?? EMPTY_CATEGORIES;
+  const caAlerts = metrics?.alerts ?? [];
 
   // Filter lists
   const filteredClients = clients.filter(c => 
@@ -1036,8 +1076,9 @@ export default function App() {
             setSelectedMonth={setSelectedMonth}
             selectedQuarter={selectedQuarter}
             setSelectedQuarter={setSelectedQuarter}
-            businessSettings={businessSettings}
             showAlert={showAlert}
+            declaration={declaration}
+            gauges={metrics?.gauges}
           />
         )}
       </main>

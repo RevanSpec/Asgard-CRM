@@ -1,88 +1,47 @@
-# `src/domain` — logique métier extraite
+# `src/domain` — ce qui reste côté JavaScript
 
-Phase 0 du [plan de migration vers Rust](../../docs/MIGRATION_RUST.md).
+Ce dossier contenait sept modules à l'issue de la phase 0. Il en reste deux.
 
-Ces modules sont des fonctions **pures** : pas de React, pas de Dexie, pas de
-DOM, aucun accès à `localStorage`. Ils prennent des données en argument et
-renvoient des données. C'est ce qui les rend testables, et c'est ce qui sera
-porté tel quel dans le crate `asgard-core` en phase 3.
+| Module | Sort |
+|---|---|
+| `money.js` | → [`asgard-core::money`](../../crates/asgard-core/src/money.rs) (phase 3) |
+| `urssaf.js` | → [`asgard-core::urssaf`](../../crates/asgard-core/src/urssaf.rs) (phase 3) |
+| `thresholds.js` | → [`asgard-core::thresholds`](../../crates/asgard-core/src/thresholds.rs) (phase 3) |
+| `reporting.js` | → [`asgard-core::reporting`](../../crates/asgard-core/src/reporting.rs) (phase 3) |
+| `numbering.js` | → [`src-tauri/src/db/numbering.rs`](../../src-tauri/src/db/numbering.rs) (phase 2) |
+| **`validation.js`** | **reste** — validation de formulaires, pas de comptabilité |
+| **`templates.js`** | **reste** — gabarits d'e-mail, jusqu'à la phase 4 |
 
-## Pourquoi cette étape existe
+## Pourquoi ces deux-là restent
 
-Avant la phase 0, la logique comptable vivait dans `App.jsx` (2 060 lignes) et
-dans des IIFE au milieu du JSX de `ComptaTab.jsx`. Elle était donc :
+La validation de formulaire appartient à l'interface : elle doit répondre à la
+frappe, sans aller-retour, et ses messages sont du texte d'interface. La
+déplacer coûterait de la latence pour aucun gain de justesse.
 
-- **intestable** — il fallait monter un composant React pour vérifier un taux ;
-- **dupliquée** — le calcul des cotisations URSSAF existait en trois exemplaires ;
-- **non spécifiée** — aucun test ne disait ce que l'application est censée calculer.
+Les gabarits d'e-mail suivront en phase 4, avec la génération de PDF et l'envoi.
 
-Sans oracle, réécrire en Rust serait une réécriture à l'aveugle : rien ne
-permettrait de prouver que le nouveau code calcule la même chose que l'ancien.
-Les tests de ce dossier *sont* cet oracle.
+## Où sont passés les golden tests
 
-## Modules
+Ils étaient 151 à l'issue de la phase 0 ; il en reste 49 ici. Les 102 autres
+portaient sur la comptabilité et **n'ont pas été supprimés : ils ont changé de
+camp**, avec le code qu'ils éprouvaient.
 
-| Module | Rôle | Cible Rust |
-|---|---|---|
-| `money.js` | TVA, totaux, arrondis, formats d'affichage | `asgard-core::money` |
-| `urssaf.js` | Taux par activité, ACRE, déclaration par période | `asgard-core::urssaf` |
-| `thresholds.js` | Seuils TVA et plafonds micro, alertes, jauges | `asgard-core::thresholds` |
-| `numbering.js` | Numérotation des factures et devis | `asgard-core::numbering` |
-| `reporting.js` | Agrégats du tableau de bord, livre des recettes, CSV | `asgard-core::reporting` |
-| `validation.js` | Validation des formulaires | `asgard-core::validation` |
-| `templates.js` | Gabarits d'e-mail et substitution de jetons | `asgard-mail::templates` |
+Ce qui rend le transfert vérifiable, c'est que les deux côtés lisent **le même
+fichier** : [`fixtures/reference-dataset.json`](../../fixtures/reference-dataset.json),
+figé en phase 0. `asgard-core::fixtures` l'embarque à la compilation.
 
-## Règle de la phase 0 : figer, pas corriger
-
-Les tests décrivent le comportement **réellement en production aujourd'hui**,
-défauts compris. Plusieurs d'entre eux assertent explicitement un comportement
-incorrect, avec un commentaire qui le signale :
-
-| Défaut | Où | Ce que le test prouve |
-|---|---|---|
-| **D3** | `numbering.test.js` | Un numéro de facture est réattribué après suppression, et deux créations concurrentes produisent le même |
-| **D5** | `money.test.js` | `1899,99 € × 20 %` vaut `379.99800000000005`, pas `379.998` |
-| **D8** | `urssaf.test.js` | Les cotisations du graphe mensuel et celles du total annuel divergent de 1 002,25 € sur le jeu de référence |
-| — | `numbering.test.js` | Les bornes d'année sont calculées en UTC alors que l'année est lue en heure locale |
-| — | `validation.test.js` | `parseFloat('1899,99')` vaut `1899` : une virgule décimale tronque les centimes en silence |
-| — | `validation.test.js` | La validation d'adresse refuse « 12 bis rue de Paris » et « 5 cours Mirabeau » |
-
-Corriger ces comportements maintenant ferait bouger des chiffres déjà déclarés
-sans rapport d'écarts, et priverait les phases suivantes de leur point de
-comparaison. Chaque correction a une phase assignée dans le plan.
-
-**Quand un de ces défauts sera corrigé, le test correspondant devra être
-réécrit — pas simplement supprimé.** C'est la trace de la décision.
-
-## Jeu de référence
-
-`fixtures/reference-dataset.json` couvre :
-
-- les trois types d'activité (BNC, BIC services, vente de marchandises) ;
-- tous les statuts de facture et de devis ;
-- ACRE activée et désactivée (deux jeux de réglages) ;
-- une facture émise en 2025 et encaissée en 2026 ;
-- une facture émise au T2 et encaissée au T3 ;
-- une catégorie de dépense inconnue, qui doit basculer dans « Autre » ;
-- des montants non ronds qui exposent les artefacts de virgule flottante ;
-- un taux de TVA à 0, qui déclenche la mention 293 B du CGI sur le PDF.
-
-Les numéros de pièce du jeu sont vérifiés contre le générateur réel par un test
-dédié : sans cela, les fixtures ne représenteraient pas des données que
-l'application a pu produire.
-
-`fixtures/pdf-reference/` contient les 22 PDF produits par jsPDF sur ce jeu.
-Leur génération est **reproductible** — date d'édition injectée, `CreationDate`
-figée, identifiant de document normalisé — de sorte que `npm run pdf:reference`
-ne salit pas le dépôt. Ce sont eux que la phase 4 devra reproduire.
-
-Une comparaison octet à octet entre jsPDF et une implémentation Rust n'aura
-aucun sens : la comparaison portera sur le texte extrait et sur le rendu visuel.
+La phase 0 posait une règle : *« quand un de ces défauts sera corrigé, le test
+correspondant devra être réécrit — pas simplement supprimé. C'est la trace de
+la décision. »* C'est ce que fait
+[`asgard-core::parity`](../../crates/asgard-core/src/parity.rs) : chaque valeur
+figée par un golden test y est reprise, comparée à ce que Rust produit, et
+classée en trois catégories — identique, artefact flottant supprimé, ou montant
+réellement modifié par l'arrondi au centime.
 
 ## Commandes
 
 ```bash
-npm test              # rejoue les golden tests
-npm run test:watch    # en continu pendant le développement
-npm run pdf:reference # régénère les PDF de référence
+npm test                      # validation et gabarits (49 tests)
+cargo test -p asgard-core     # logique comptable (87 tests, proptests compris)
+cargo test                    # tout, hôte compris
 ```

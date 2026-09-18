@@ -149,3 +149,34 @@ export async function importBackup(backup) {
 export async function backupToFile(destination) {
   return call('backup_to_file', { destination }, null);
 }
+
+// --------------------------------------------------------------- calculs
+
+/**
+ * Agrégats du tableau de bord, calculés par le noyau métier Rust.
+ *
+ * Phase 3 : ces chiffres étaient calculés dans `App.jsx`, en virgule flottante,
+ * et le calcul URSSAF y existait en trois exemplaires divergents. Ils viennent
+ * désormais d'`asgard-core`, en arithmétique décimale.
+ *
+ * Deux bases de cotisations sont renvoyées, là où l'ancienne version en
+ * mélangeait deux sans le dire : `urssafCharges` sur l'encaissé — la seule
+ * déclarable — et `urssafChargesProjected` sur le facturé.
+ */
+export async function loadDashboard(settings, year) {
+  return call('dashboard', { settings, year }, null);
+}
+
+/**
+ * Déclaration URSSAF d'une période.
+ * `period` vaut `{ periodType: 'monthly', year, month }` ou
+ * `{ periodType: 'quarterly', year, quarter }`.
+ */
+export async function loadUrssafDeclaration(settings, period) {
+  return call('urssaf_declaration', { settings, period }, null);
+}
+
+/** Livre des recettes au format CSV réglementaire, produit côté Rust. */
+export async function loadRecettesCsv() {
+  return call('recettes_csv', undefined, '');
+}

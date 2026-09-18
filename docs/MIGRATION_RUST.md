@@ -192,17 +192,31 @@ Les 30 Mo ne couvrent que le processus hôte : les processus WebView2 enfants n'
 
 *Critère de sortie* : base fichier inspectable, reprise vérifiée sur une sauvegarde réelle, golden tests toujours verts. **D4, D6 résolus.**
 
-### Phase 3 — Noyau métier Rust *(5-7 j)*
+### Phase 3 — Noyau métier Rust *(5-7 j)* ✅ **livrée**
+
+> **Livré** — crate `crates/asgard-core`, sans dépendance à Tauri ni à SQLite :
+> `money` (rust_decimal), `urssaf` (une seule implémentation), `thresholds`
+> (barèmes datés), `reporting` (agrégats, livre des recettes, CSV). 87 tests,
+> tests de propriété compris. Cinq des sept modules de `src/domain` disparaissent.
 
 1. `asgard-core::money` : `rust_decimal`, conversion centimes ↔ décimal, arrondi au centime explicite (**D5**).
 2. `asgard-core::urssaf` : une seule implémentation, taux par type d'activité, abattement ACRE 50 %, découpage mensuel/trimestriel — remplace les trois copies (**D8**).
 3. `asgard-core::thresholds` : barèmes TVA et plafonds micro-entreprise **paramétrés par année fiscale** plutôt qu'écrits en dur dans le JSX.
-4. `asgard-core::numbering` : séquence transactionnelle conforme (**D3**).
+4. ~~`asgard-core::numbering`~~ — *fait en phase 2*, la numérotation appartenait au schéma de la base (**D3**).
 5. `asgard-core::reporting` : agrégats du tableau de bord, livre des recettes, export CSV (séparateur `;`, décimale `,`, BOM UTF-8 — comme l'existant).
 6. Rejouer les golden tests de la phase 0 contre Rust sur les mêmes fixtures JSON. Ajouter des `proptest` sur les arrondis (invariant : `ht + tva == ttc` au centime près).
 7. **Produire un rapport d'écarts** : sur les données réelles de l'utilisateur, comparer les totaux `f64` et `Decimal`. Les chiffres vont bouger de quelques centimes — il faut pouvoir l'expliquer, pas le découvrir.
 
-*Critère de sortie* : `App.jsx` réduit à l'état d'UI ; parité numérique documentée. **D3, D5, D8 résolus.**
+*Critère de sortie* : `App.jsx` réduit à l'état d'UI ; parité numérique documentée. **Atteint — D5 et D8 résolus** (D3 l'avait été en phase 2).
+
+**Précisions apportées par l'exécution :**
+
+- **La parité se démontre sur le même fichier.** `asgard-core::fixtures` embarque `fixtures/reference-dataset.json`, celui que les golden tests JavaScript utilisent depuis la phase 0. Les deux implémentations sont donc éprouvées sur des données identiques, et non sur deux jeux supposés équivalents. Le module `parity` classe chaque valeur en trois catégories : identique, artefact flottant supprimé, ou montant réellement modifié par l'arrondi au centime.
+- **D8 est tranché, pas seulement unifié.** Les deux bases qui se contredisaient — factures émises contre encaissées, 1 002,25 € d'écart sur le jeu de référence — existent toujours mais sont nommées : `Basis::Collected` est la seule déclarable à l'URSSAF, `Basis::Issued` est une projection de trésorerie. Conséquence : sur la base encaissée, la somme des mois se recoupe enfin avec le total annuel, ce que l'ancienne implémentation ne permettait pas.
+- **Un contrat de sérialisation a failli casser en silence.** `rust_decimal` sérialise par défaut en **chaîne** (`"19650.34"`). L'interface appelle `.toFixed(2)` dessus, ce qui aurait échoué sans aucune erreur côté Rust. Un test de contrat l'a attrapé avant tout travail sur le frontend ; la fonctionnalité `serde-float` corrige le tir.
+- **Les montants sont dérivés à l'écriture.** L'interface n'envoie plus que le HT et le taux ; la TVA et le total sont calculés côté Rust. L'invariant `HT + TVA = TTC` est ainsi garanti en base plutôt que de dépendre de l'appelant.
+- **Piège de l'espace de travail Cargo.** Déclarer un workspace déplace la sortie de compilation vers `/target` à la racine — que le `.gitignore` de `src-tauri` ne couvre pas — et fait **ignorer** le `[profile.release]` des packages membres. Le binaire est passé de 5,7 à 14,2 Mo sans autre signe qu'un avertissement noyé dans le log de compilation. Profil déplacé à la racine, `/target` ajouté au `.gitignore`.
+- **Les tests JavaScript passent de 151 à 49.** Les 102 autres n'ont pas été supprimés : ils ont changé de camp avec le code qu'ils éprouvaient.
 
 ### Phase 4 — PDF et e-mail entièrement côté Rust *(4-6 j)*
 
@@ -260,7 +274,7 @@ Leptos 0.7 (CSR) ou Dioxus 0.6, CSS conservé à l'identique, types partagés de
 | 0 — Filet de sécurité ✅ | 3-4 j | D7, D9 |
 | 1 — Coquille Tauri ✅ | 5-7 j | D1, D2, D10 |
 | 2 — SQLite OK | 5-7 j | D3, D4, D6 (+ D5 amorce) |
-| 3 — Noyau métier | 5-7 j | D3, D5, D8 |
+| 3 — Noyau métier ✅ | 5-7 j | D5 (fin), D8 |
 | 4 — PDF & e-mail | 4-6 j | — |
 | **Total phases 0-4** | **22-31 j** (≈ 5-6 semaines) | **les 10 défauts** |
 | 5 — Frontend Rust *(option)* | +4-6 semaines | — |

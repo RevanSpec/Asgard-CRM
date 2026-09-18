@@ -8,7 +8,8 @@ use chrono::Datelike;
 use sqlx::{Row, SqlitePool};
 
 use super::model::*;
-use super::money::{from_cents, to_cents};
+use super::money::from_cents;
+use asgard_core::money::to_cents as decimal_to_cents;
 use super::numbering::{self, DocumentKind};
 use super::DbError;
 
@@ -149,6 +150,7 @@ pub async fn list_invoices(pool: &SqlitePool) -> Result<Vec<Invoice>, DbError> {
 
 /// Crée une facture et lui attribue son numéro dans la même transaction.
 pub async fn create_invoice(pool: &SqlitePool, input: DocumentInput) -> Result<Invoice, DbError> {
+    let amounts = input.amounts();
     let mut tx = pool.begin().await?;
 
     let year = year_of(&input.date);
@@ -171,10 +173,10 @@ pub async fn create_invoice(pool: &SqlitePool, input: DocumentInput) -> Result<I
     .bind(&number)
     .bind(&input.service_type)
     .bind(&input.description)
-    .bind(to_cents(input.amount_ht))
+    .bind(decimal_to_cents(amounts.amount_ht))
     .bind(input.tva_rate)
-    .bind(to_cents(input.amount_tva))
-    .bind(to_cents(input.amount_total))
+    .bind(decimal_to_cents(amounts.amount_tva))
+    .bind(decimal_to_cents(amounts.amount_total))
     .bind(&input.date)
     .bind(input.status.as_deref().unwrap_or("brouillon"))
     .fetch_one(&mut *tx)
@@ -292,6 +294,7 @@ pub async fn list_estimates(pool: &SqlitePool) -> Result<Vec<Estimate>, DbError>
 }
 
 pub async fn save_estimate(pool: &SqlitePool, input: DocumentInput) -> Result<Estimate, DbError> {
+    let amounts = input.amounts();
     let mut tx = pool.begin().await?;
 
     let id = match input.id {
@@ -306,10 +309,10 @@ pub async fn save_estimate(pool: &SqlitePool, input: DocumentInput) -> Result<Es
             .bind(&input.company_name)
             .bind(&input.service_type)
             .bind(&input.description)
-            .bind(to_cents(input.amount_ht))
+            .bind(decimal_to_cents(amounts.amount_ht))
             .bind(input.tva_rate)
-            .bind(to_cents(input.amount_tva))
-            .bind(to_cents(input.amount_total))
+            .bind(decimal_to_cents(amounts.amount_tva))
+            .bind(decimal_to_cents(amounts.amount_total))
             .bind(&input.date)
             .bind(input.status.as_deref().unwrap_or("brouillon"))
             .bind(id)
@@ -338,10 +341,10 @@ pub async fn save_estimate(pool: &SqlitePool, input: DocumentInput) -> Result<Es
             .bind(&number)
             .bind(&input.service_type)
             .bind(&input.description)
-            .bind(to_cents(input.amount_ht))
+            .bind(decimal_to_cents(amounts.amount_ht))
             .bind(input.tva_rate)
-            .bind(to_cents(input.amount_tva))
-            .bind(to_cents(input.amount_total))
+            .bind(decimal_to_cents(amounts.amount_tva))
+            .bind(decimal_to_cents(amounts.amount_total))
             .bind(&input.date)
             .bind(input.status.as_deref().unwrap_or("brouillon"))
             .fetch_one(&mut *tx)
@@ -485,7 +488,7 @@ pub async fn save_expense(pool: &SqlitePool, input: ExpenseInput) -> Result<i64,
             .bind(&input.date)
             .bind(&input.merchant)
             .bind(&input.category)
-            .bind(to_cents(input.amount))
+            .bind(decimal_to_cents(asgard_core::from_f64(input.amount)))
             .bind(&input.description)
             .bind(&input.payment_method)
             .bind(id)
@@ -501,7 +504,7 @@ pub async fn save_expense(pool: &SqlitePool, input: ExpenseInput) -> Result<i64,
             .bind(&input.date)
             .bind(&input.merchant)
             .bind(&input.category)
-            .bind(to_cents(input.amount))
+            .bind(decimal_to_cents(asgard_core::from_f64(input.amount)))
             .bind(&input.description)
             .bind(&input.payment_method)
             .fetch_one(pool)
