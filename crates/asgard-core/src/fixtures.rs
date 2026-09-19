@@ -1,13 +1,13 @@
 //! Jeu de référence de la phase 0, lu depuis Rust.
 //!
 //! `fixtures/reference-dataset.json` a été figé en phase 0 pour servir d'oracle.
-//! Les golden tests JavaScript l'utilisent ; ces modules l'utilisent aussi.
-//! **C'est le même fichier**, et c'est tout l'intérêt : la parité entre les deux
-//! implémentations se démontre sur des données identiques, pas sur deux jeux
-//! qu'on croit équivalents.
+//! Les golden tests JavaScript l'utilisaient jusqu'à leur suppression en
+//! phase 5 ; ces modules, et les tests de `asgard-ui`, l'utilisent toujours.
+//! **C'était le même fichier**, et c'était tout l'intérêt : la parité entre les
+//! deux implémentations s'est démontrée sur des données identiques, pas sur deux
+//! jeux qu'on croyait équivalents.
 //!
-//! Le fichier est embarqué à la compilation. S'il change, les tests des deux
-//! côtés bougent ensemble.
+//! Le fichier est embarqué à la compilation.
 
 use rust_decimal::prelude::*;
 use rust_decimal_macros::dec;

@@ -1,17 +1,15 @@
-//! Clients — port de `src/components/ClientsTab.jsx` et de ses modales.
-//!
-//! Sert de gabarit aux onglets restants : recherche, tableau, formulaire, appel
-//! à l'hôte, rechargement. Le schéma se répète pour les factures, devis et
-//! dépenses.
+//! Clients — port de `src/components/ClientsTab.jsx` et de sa modale.
 
 use asgard_ipc::{Client, ClientInput};
 use leptos::prelude::*;
-use serde::Serialize;
 
-use crate::ipc;
-use crate::state::use_app;
+use super::icons;
+use super::widgets::{EmptyState, IconButton, Modal, SearchBox, TextField};
+use crate::state::{use_app, Pending};
+use crate::validation::{self, ClientForm, Field, FieldErrors};
+use crate::actions;
 
-/// Saisie en cours. `id` absent signifie création.
+/// Fiche en cours de saisie. `id` absent signifie création.
 #[derive(Debug, Clone, Default, PartialEq)]
 struct Draft {
     id: Option<i64>,
@@ -35,6 +33,14 @@ impl From<&Client> for Draft {
     }
 }
 
+/// Filtre de la recherche : entreprise, contact ou e-mail, comme l'original.
+fn matches(client: &Client, needle: &str) -> bool {
+    needle.is_empty()
+        || client.company_name.to_lowercase().contains(needle)
+        || client.contact_name.to_lowercase().contains(needle)
+        || client.email.to_lowercase().contains(needle)
+}
+
 pub fn clients() -> impl IntoView {
     let app = use_app();
     let search = RwSignal::new(String::new());
@@ -44,18 +50,7 @@ pub fn clients() -> impl IntoView {
         let needle = search.get().to_lowercase();
         app.snapshot
             .get()
-            .map(|snapshot| {
-                snapshot
-                    .clients
-                    .into_iter()
-                    .filter(|client| {
-                        needle.is_empty()
-                            || client.company_name.to_lowercase().contains(&needle)
-                            || client.contact_name.to_lowercase().contains(&needle)
-                            || client.email.to_lowercase().contains(&needle)
-                    })
-                    .collect::<Vec<_>>()
-            })
+            .map(|s| s.clients.into_iter().filter(|c| matches(c, &needle)).collect::<Vec<_>>())
             .unwrap_or_default()
     };
 
@@ -63,56 +58,52 @@ pub fn clients() -> impl IntoView {
         <div>
             <div class="page-header">
                 <div class="page-title-container">
-                    <h1>"Clients"</h1>
-                    <p>"Fiches complètes de vos clients et historique d'affaires."</p>
+                    <h1>"Fichiers Clients"</h1>
+                    <p>"Gérez les coordonnées de vos clients et partenaires commerciaux."</p>
                 </div>
-                <button
-                    class="btn btn-primary"
-                    on:click=move |_| draft.set(Some(Draft::default()))
-                >
-                    "+ Ajouter un client"
-                </button>
+                <div class="flex-gap-2">
+                    <SearchBox value=search placeholder="Rechercher un client..." />
+                    <button class="btn btn-primary" on:click=move |_| draft.set(Some(Draft::default()))>
+                        {icons::add()}
+                        " Nouveau Client"
+                    </button>
+                </div>
             </div>
 
-            <input
-                class="form-input"
-                style="max-width: 420px; margin-bottom: 1.25rem"
-                placeholder="Rechercher par nom, contact ou e-mail…"
-                prop:value=move || search.get()
-                on:input=move |ev| search.set(event_target_value(&ev))
-            />
-
-            <div class="table-container">
-                <table class="table-glass">
-                    <thead>
-                        <tr>
-                            <th>"Entreprise"</th>
-                            <th>"Contact"</th>
-                            <th>"Email"</th>
-                            <th>"Téléphone"</th>
-                            <th>"Actions"</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        <For
-                            each=visible
-                            key=|client| client.id
-                            let:client
-                        >
-                            <Row client=client draft=draft />
-                        </For>
-                    </tbody>
-                </table>
-
-                <Show when=move || visible().is_empty()>
-                    <p style="text-align: center; padding: 2rem; color: var(--text-secondary)">
-                        "Aucun client ne correspond à cette recherche."
-                    </p>
+            <div class="card-glass" style="padding: 0.5rem 0">
+                <Show
+                    when=move || !visible().is_empty()
+                    fallback=|| view! { <EmptyState message="Aucun client trouvé." rune=true /> }
+                >
+                    <div class="table-container">
+                        <table class="table-glass">
+                            <thead>
+                                <tr>
+                                    <th>"Entreprise"</th>
+                                    <th>"Contact"</th>
+                                    <th>"Email"</th>
+                                    <th>"Téléphone"</th>
+                                    <th>"Adresse"</th>
+                                    <th class="text-right">"Actions"</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                // Lignes redessinées à chaque changement : une `<For>` indexée
+                                // sur l'identifiant garderait l'ancien contenu d'une ligne modifiée.
+                                {move || {
+                                    visible()
+                                        .into_iter()
+                                        .map(|client| view! { <Row client=client draft=draft /> })
+                                        .collect_view()
+                                }}
+                            </tbody>
+                        </table>
+                    </div>
                 </Show>
             </div>
 
             <Show when=move || draft.get().is_some()>
-                <Form draft=draft />
+                {move || draft.get().map(|current| view! { <Form initial=current draft=draft /> })}
             </Show>
         </div>
     }
@@ -122,42 +113,35 @@ pub fn clients() -> impl IntoView {
 fn Row(client: Client, draft: RwSignal<Option<Draft>>) -> impl IntoView {
     let app = use_app();
     let id = client.id;
-    let editable = client.clone();
-
-    let remove = move |_| {
-        leptos::task::spawn_local(async move {
-            #[derive(Serialize)]
-            struct Args {
-                id: i64,
-            }
-
-            match ipc::invoke::<_, ()>("delete_client", &Args { id }).await {
-                // Les pièces du client restent, détachées : c'est ce que
-                // l'interface annonce depuis toujours, et la clé étrangère le
-                // garantit côté base.
-                Ok(()) => app.reload().await,
-                Err(error) => app.report(error),
-            }
-        });
-    };
+    let editable = Draft::from(&client);
 
     view! {
         <tr>
-            <td><strong>{client.company_name}</strong></td>
+            <td style="font-weight: 700; color: var(--color-gold)">{client.company_name}</td>
             <td>{client.contact_name}</td>
             <td>{client.email}</td>
-            <td>{client.phone}</td>
-            <td>
-                <div class="flex-gap-2">
-                    <button
-                        class="btn btn-secondary btn-sm"
-                        on:click=move |_| draft.set(Some(Draft::from(&editable)))
-                    >
-                        "Modifier"
-                    </button>
-                    <button class="btn btn-danger btn-sm" on:click=remove>
-                        "Supprimer"
-                    </button>
+            <td style="white-space: nowrap">{client.phone}</td>
+            <td
+                style="max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap"
+                title=client.address.clone()
+            >
+                {client.address.clone()}
+            </td>
+            <td class="text-right">
+                <div class="flex-gap-2" style="justify-content: flex-end">
+                    <IconButton
+                        icon=icons::edit
+                        title="Modifier"
+                        on_click=Callback::new(move |_| draft.set(Some(editable.clone())))
+                    />
+                    // Comme dans l'original, la suppression passe par une
+                    // confirmation : les pièces du client restent, détachées.
+                    <IconButton
+                        icon=icons::delete
+                        title="Supprimer"
+                        danger=true
+                        on_click=Callback::new(move |_| app.pending.set(Some(Pending::DeleteClient(id))))
+                    />
                 </div>
             </td>
         </tr>
@@ -165,151 +149,133 @@ fn Row(client: Client, draft: RwSignal<Option<Draft>>) -> impl IntoView {
 }
 
 #[component]
-fn Form(draft: RwSignal<Option<Draft>>) -> impl IntoView {
+fn Form(initial: Draft, draft: RwSignal<Option<Draft>>) -> impl IntoView {
     let app = use_app();
-    let errors = RwSignal::new(Vec::<&'static str>::new());
+    let id = initial.id;
+    let is_edit = id.is_some();
 
-    let field = move |read: fn(&Draft) -> String, write: fn(&mut Draft, String)| {
-        (
-            Signal::derive(move || draft.get().map(|d| read(&d)).unwrap_or_default()),
-            move |value: String| {
-                draft.update(|slot| {
-                    if let Some(current) = slot {
-                        write(current, value);
-                    }
-                });
-            },
-        )
-    };
+    let company = RwSignal::new(initial.company_name);
+    let contact = RwSignal::new(initial.contact_name);
+    let email = RwSignal::new(initial.email);
+    let phone = RwSignal::new(initial.phone);
+    let address = RwSignal::new(initial.address);
+    let errors = RwSignal::new(FieldErrors::default());
+    let error = move |field| Signal::derive(move || errors.with(|e| e.get(field)));
 
     let submit = move |ev: leptos::ev::SubmitEvent| {
         ev.prevent_default();
-        let Some(current) = draft.get() else { return };
 
-        // La validation reste ici : elle doit répondre à la frappe, sans
-        // aller-retour, et ses messages sont du texte d'interface.
-        let mut found = Vec::new();
-        if current.company_name.trim().is_empty() {
-            found.push("Nom d'entreprise requis");
-        }
-        if current.contact_name.trim().is_empty() {
-            found.push("Nom du contact requis");
-        }
-        if !current.email.contains('@') {
-            found.push("Format e-mail invalide");
-        }
-        if current.phone.chars().filter(char::is_ascii_digit).count() != 10 {
-            found.push("Le numéro doit faire exactement 10 chiffres");
-        }
+        let (company, contact, email, phone, address) =
+            (company.get(), contact.get(), email.get(), phone.get(), address.get());
 
-        errors.set(found.clone());
-        if !found.is_empty() {
+        let found = validation::validate_client(&ClientForm {
+            company_name: &company,
+            contact_name: &contact,
+            email: &email,
+            phone: &phone,
+            address: &address,
+        });
+        let valid = found.is_empty();
+        errors.set(found);
+        if !valid {
             return;
         }
 
+        // La raison sociale est recopiée sur les pièces côté hôte, dans la
+        // même transaction que la mise à jour du client.
+        let input = ClientInput {
+            id,
+            company_name: company,
+            contact_name: contact,
+            email,
+            phone,
+            address,
+        };
         leptos::task::spawn_local(async move {
-            #[derive(Serialize)]
-            #[serde(rename_all = "camelCase")]
-            struct Args {
-                client: ClientInput,
-            }
-
-            let args = Args {
-                client: ClientInput {
-                    id: current.id,
-                    company_name: current.company_name,
-                    contact_name: current.contact_name,
-                    email: current.email,
-                    phone: current.phone,
-                    address: current.address,
-                },
-            };
-
-            match ipc::invoke::<_, i64>("save_client", &args).await {
-                Ok(_) => {
-                    draft.set(None);
-                    app.reload().await;
-                }
-                Err(error) => app.report(error),
+            if actions::save_client(app, input).await {
+                draft.set(None);
             }
         });
     };
 
-    let (company, set_company) = field(|d| d.company_name.clone(), |d, v| d.company_name = v);
-    let (contact, set_contact) = field(|d| d.contact_name.clone(), |d, v| d.contact_name = v);
-    let (email, set_email) = field(|d| d.email.clone(), |d, v| d.email = v);
-    let (phone, set_phone) = field(|d| d.phone.clone(), |d, v| d.phone = v);
-    let (address, set_address) = field(|d| d.address.clone(), |d, v| d.address = v);
-
-    let is_edit = move || draft.get().and_then(|d| d.id).is_some();
-
     view! {
-        <div class="modal-overlay">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <h2>
-                        {move || if is_edit() { "Modifier le client" } else { "Ajouter un client" }}
-                    </h2>
-                    <button
-                        class="btn btn-secondary btn-icon-only"
-                        style="border-radius: 50%"
-                        on:click=move |_| draft.set(None)
-                    >
-                        "✕"
+        <Modal
+            title=if is_edit { "Modifier le client" } else { "Ajouter un client" }
+            on_close=Callback::new(move |_| draft.set(None))
+        >
+            <form on:submit=submit>
+                <div class="modal-body">
+                    <TextField
+                        label="Nom de l'entreprise"
+                        value=company
+                        placeholder="Ex: Stark Industries"
+                        error=error(Field::CompanyName)
+                    />
+                    <TextField
+                        label="Nom du contact"
+                        value=contact
+                        placeholder="Ex: Pepper Potts"
+                        error=error(Field::ContactName)
+                    />
+                    <TextField
+                        label="Email"
+                        value=email
+                        placeholder="Ex: contact@entreprise.fr"
+                        error=error(Field::Email)
+                    />
+                    <TextField
+                        label="Numéro de téléphone"
+                        value=phone
+                        placeholder="Ex: 06 12 34 56 78"
+                        error=error(Field::Phone)
+                        format=validation::format_phone
+                    />
+                    <TextField
+                        label="Adresse de l'entreprise"
+                        value=address
+                        placeholder="Ex: 12 Rue de la Paix, 75002 Paris"
+                        error=error(Field::Address)
+                    />
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" on:click=move |_| draft.set(None)>
+                        "Annuler"
+                    </button>
+                    <button type="submit" class="btn btn-primary">
+                        {if is_edit { "Modifier" } else { "Ajouter" }}
                     </button>
                 </div>
-
-                <form on:submit=submit>
-                    <div class="modal-body">
-                        <Field label="Nom de l'entreprise" value=company on_input=set_company />
-                        <Field label="Nom du contact" value=contact on_input=set_contact />
-                        <Field label="Email" value=email on_input=set_email />
-                        <Field label="Téléphone" value=phone on_input=set_phone />
-                        <Field label="Adresse" value=address on_input=set_address />
-
-                        <Show when=move || !errors.get().is_empty()>
-                            <ul class="error-list">
-                                {move || {
-                                    errors
-                                        .get()
-                                        .into_iter()
-                                        .map(|message| view! { <li class="error-text">{message}</li> })
-                                        .collect_view()
-                                }}
-                            </ul>
-                        </Show>
-                    </div>
-
-                    <div class="modal-footer">
-                        <button
-                            type="button"
-                            class="btn btn-secondary"
-                            on:click=move |_| draft.set(None)
-                        >
-                            "Annuler"
-                        </button>
-                        <button type="submit" class="btn btn-primary">"Enregistrer"</button>
-                    </div>
-                </form>
-            </div>
-        </div>
+            </form>
+        </Modal>
     }
 }
 
-#[component]
-fn Field(
-    label: &'static str,
-    value: Signal<String>,
-    on_input: impl Fn(String) + 'static,
-) -> impl IntoView {
-    view! {
-        <div class="form-group">
-            <label class="form-label">{label}</label>
-            <input
-                class="form-input"
-                prop:value=move || value.get()
-                on:input=move |ev| on_input(event_target_value(&ev))
-            />
-        </div>
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn client() -> Client {
+        Client {
+            id: 1,
+            company_name: "Stark Industries".into(),
+            contact_name: "Pepper Potts".into(),
+            email: "pepper@stark.com".into(),
+            phone: "06 11 22 33 44".into(),
+            address: "12 rue de Paris".into(),
+            created_at: String::new(),
+        }
+    }
+
+    /// La recherche porte sur l'entreprise, le contact et l'e-mail — pas sur
+    /// le téléphone ni l'adresse, comme dans l'original.
+    #[test]
+    fn search_covers_company_contact_and_email_only() {
+        let c = client();
+        assert!(matches(&c, ""));
+        assert!(matches(&c, "stark ind"));
+        assert!(matches(&c, "pepper"));
+        assert!(matches(&c, "@stark.com"));
+        assert!(!matches(&c, "06 11"));
+        assert!(!matches(&c, "rue de paris"));
     }
 }

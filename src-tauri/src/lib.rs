@@ -77,9 +77,9 @@ fn clear_smtp_password() -> Result<(), String> {
 
 // ------------------------------------------------------------ base de données
 //
-// Les commandes renvoient exactement les formes que Dexie produisait, pour que
-// les composants React restent inchangés. Seul `src/db.js` a changé de nature :
-// d'un schéma Dexie il devient un adaptateur vers ces commandes.
+// Les commandes renvoient les formes que Dexie produisait, celles que
+// l'interface a toujours lues. Depuis la phase 5, elles sont déclarées dans
+// `asgard-ipc`, que l'interface Leptos compile aussi.
 
 #[tauri::command]
 async fn load_snapshot(db: tauri::State<'_, Db>) -> Result<Snapshot, DbError> {

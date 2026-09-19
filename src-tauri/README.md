@@ -121,7 +121,7 @@ npm run icon
 ## Développer
 
 ```bash
-npm run dev     # Vite + compilation Rust + fenêtre
+npm run dev     # trunk (interface) + compilation Rust + fenêtre
 npm run dist    # installeur NSIS
 cargo test      # tests de l'hôte
 ```
@@ -131,7 +131,8 @@ cargo test      # tests de l'hôte
 Un binaire release doit être produit par la CLI Tauri, jamais par cargo seul.
 La CLI fait deux choses que `cargo build` ignore :
 
-1. elle exécute `beforeBuildCommand` (`npm run build`), qui régénère `dist/` ;
+1. elle exécute `beforeBuildCommand` (`trunk build --release`), qui régénère
+   `crates/asgard-ui/dist/` ;
 2. elle indique à `tauri::generate_context!` d'embarquer ces fichiers plutôt
    que de pointer sur `devUrl`.
 
@@ -145,6 +146,6 @@ exécutable cassé : il détecte l'absence de `TAURI_CLI_VERBOSITY`, variable qu
 seule la CLI Tauri renseigne, et interrompt la compilation avec un message
 indiquant la commande à utiliser.
 
-Pour travailler l'interface sans recompiler Rust, `npm run dev:vite` suffit :
-`isDesktop()` renvoie alors `false` et les fonctionnalités dépendant de l'hôte
-sont désactivées proprement au lieu de lever.
+L'interface Leptos ne se sert pas seule : toutes ses données passent par les
+commandes de l'hôte. `npm run dev` recompile d'ailleurs l'interface à chaque
+modification, sans relancer la compilation de l'hôte.

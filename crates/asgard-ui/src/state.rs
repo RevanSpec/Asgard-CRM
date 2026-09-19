@@ -48,19 +48,6 @@ impl Tab {
             Tab::Settings => "Paramètres",
         }
     }
-
-    /// Identifiant du symbole dans `public/icons.svg`, réutilisé tel quel.
-    pub fn icon(self) -> &'static str {
-        match self {
-            Tab::Dashboard => "dashboard",
-            Tab::Clients => "users",
-            Tab::Estimates => "file-text",
-            Tab::Invoices => "file",
-            Tab::Expenses => "credit-card",
-            Tab::Compta => "bar-chart",
-            Tab::Settings => "settings",
-        }
-    }
 }
 
 /// Période de déclaration choisie dans l'onglet Comptabilité.
@@ -110,6 +97,92 @@ impl From<Period> for PeriodPayload {
     }
 }
 
+/// Action destructrice en attente de confirmation.
+///
+/// La version React stockait une closure `onConfirm` dans l'état. Un enum est
+/// préférable : chaque cas est nommé, testable, et le texte de confirmation
+/// vit à côté de l'action qu'il annonce au lieu d'être dispersé dans six
+/// gestionnaires.
+#[derive(Debug, Clone, PartialEq)]
+pub enum Pending {
+    DeleteClient(i64),
+    DeleteInvoices(Vec<i64>),
+    DeleteEstimate(i64),
+    DeleteExpense(i64),
+    ConvertEstimate { id: i64, number: String },
+    /// Restauration d'une sauvegarde déjà lue et reconnue.
+    ImportBackup(serde_json::Value),
+}
+
+impl Pending {
+    pub fn title(&self) -> &'static str {
+        match self {
+            Pending::DeleteClient(_) => "Supprimer le client",
+            Pending::DeleteInvoices(ids) if ids.len() > 1 => "Supprimer les factures sélectionnées",
+            Pending::DeleteInvoices(_) => "Supprimer la facture",
+            Pending::DeleteEstimate(_) => "Supprimer le devis",
+            Pending::DeleteExpense(_) => "Supprimer la dépense",
+            Pending::ConvertEstimate { .. } => "Convertir en facture",
+            Pending::ImportBackup(_) => "Restaurer une sauvegarde",
+        }
+    }
+
+    pub fn message(&self) -> String {
+        match self {
+            Pending::DeleteClient(_) => concat!(
+                "Êtes-vous sûr de vouloir supprimer ce client ? Toutes ses factures ",
+                "associées resteront dans l'historique mais déconnectées.",
+            )
+            .into(),
+            Pending::DeleteInvoices(ids) if ids.len() > 1 => format!(
+                "Êtes-vous sûr de vouloir supprimer les {} factures sélectionnées ? Les \
+                 factures émises seront conservées et retirées de la liste ; seuls les \
+                 brouillons sont réellement effacés.",
+                ids.len()
+            ),
+            Pending::DeleteInvoices(_) => concat!(
+                "Êtes-vous sûr de vouloir supprimer cette facture ? Si elle a été émise, ",
+                "elle sera conservée et retirée de la liste : une facture émise ne se ",
+                "supprime pas.",
+            )
+            .into(),
+            Pending::DeleteEstimate(_) => "Êtes-vous sûr de vouloir supprimer ce devis ?".into(),
+            Pending::DeleteExpense(_) => {
+                "Êtes-vous sûr de vouloir supprimer cette dépense ?".into()
+            }
+            Pending::ConvertEstimate { number, .. } => format!(
+                "Voulez-vous convertir le devis {number} en facture ? Un nouveau numéro \
+                 de facture sera généré automatiquement."
+            ),
+            // Repris du `window.confirm` de l'original.
+            Pending::ImportBackup(_) => concat!(
+                "Êtes-vous sûr de vouloir importer cette sauvegarde ? Cette action écrasera ",
+                "TOUTES les données actuelles de l'application (clients, factures, devis, ",
+                "dépenses et paramètres).",
+            )
+            .into(),
+        }
+    }
+}
+
+/// E-mail en cours de composition, relu par l'utilisateur avant envoi.
+#[derive(Debug, Clone, PartialEq)]
+pub struct EmailCompose {
+    pub kind: crate::templates::Kind,
+    pub id: i64,
+    pub number: String,
+    pub to: String,
+    pub subject: String,
+    pub text: String,
+}
+
+/// Règlement en cours de saisie.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PaymentForm {
+    pub invoice_id: i64,
+    pub number: String,
+}
+
 /// Message affiché à l'utilisateur.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Notice {
@@ -126,8 +199,18 @@ pub struct App {
     pub declaration: RwSignal<Option<Declaration>>,
     pub period: RwSignal<Period>,
     pub notice: RwSignal<Option<Notice>>,
+    /// Action destructrice en attente de confirmation.
+    pub pending: RwSignal<Option<Pending>>,
+    /// Fenêtre d'envoi par e-mail, ouverte depuis plusieurs écrans.
+    pub email: RwSignal<Option<EmailCompose>>,
+    /// Fenêtre de règlement, ouverte depuis les factures et le tableau de bord.
+    pub payment: RwSignal<Option<PaymentForm>>,
     /// Vrai tant que le premier chargement n'a pas abouti.
     pub loading: RwSignal<bool>,
+    /// Incrémenté quand les réglages sont remplacés de l'extérieur (reprise
+    /// d'une sauvegarde) : l'écran Paramètres se reconstruit alors, au lieu de
+    /// réécrire les réglages restaurés avec les valeurs qu'il avait en mémoire.
+    pub settings_epoch: RwSignal<u32>,
 }
 
 impl Default for App {
@@ -145,7 +228,11 @@ impl App {
             declaration: RwSignal::new(None),
             period: RwSignal::new(Period::default()),
             notice: RwSignal::new(None),
+            pending: RwSignal::new(None),
+            email: RwSignal::new(None),
+            payment: RwSignal::new(None),
             loading: RwSignal::new(true),
+            settings_epoch: RwSignal::new(0),
         }
     }
 
@@ -160,6 +247,12 @@ impl App {
     /// Signale une opération qui a échoué, sans la faire disparaître.
     pub fn report(&self, error: ipc::IpcError) {
         self.inform("Erreur", error.to_string());
+    }
+
+    /// Même chose, précédé de ce qui était tenté, comme les messages de
+    /// l'original (« Erreur lors de la conversion : … »).
+    pub fn report_as(&self, context: &str, error: ipc::IpcError) {
+        self.inform("Erreur", format!("{context} : {error}"));
     }
 
     /// Recharge données et agrégats.
@@ -229,10 +322,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_tab_has_a_label_and_an_icon() {
+    fn confirmation_titles_distinguish_one_invoice_from_several() {
+        assert_eq!(Pending::DeleteInvoices(vec![1]).title(), "Supprimer la facture");
+        assert_eq!(
+            Pending::DeleteInvoices(vec![1, 2]).title(),
+            "Supprimer les factures sélectionnées"
+        );
+    }
+
+    /// Le message doit annoncer ce qui se passe réellement : depuis la phase 2,
+    /// une facture émise est archivée, pas effacée.
+    #[test]
+    fn deleting_an_invoice_announces_that_issued_ones_are_kept() {
+        assert!(Pending::DeleteInvoices(vec![1]).message().contains("conservée"));
+        assert!(Pending::DeleteInvoices(vec![1, 2, 3]).message().contains("3 factures"));
+    }
+
+    #[test]
+    fn converting_names_the_estimate() {
+        let action = Pending::ConvertEstimate { id: 4, number: "DEV-X-2026-0004".into() };
+        assert!(action.message().contains("DEV-X-2026-0004"));
+    }
+
+    #[test]
+    fn every_tab_has_a_label() {
         for tab in Tab::ALL {
             assert!(!tab.label().is_empty(), "{tab:?}");
-            assert!(!tab.icon().is_empty(), "{tab:?}");
+        }
+    }
+
+    /// Aucun message ne doit contenir de suite d'espaces : c'est le signe d'une
+    /// continuation de ligne mal échappée, qui s'afficherait telle quelle.
+    #[test]
+    fn confirmation_messages_have_no_runs_of_spaces() {
+        for action in [
+            Pending::DeleteClient(1),
+            Pending::DeleteInvoices(vec![1]),
+            Pending::DeleteInvoices(vec![1, 2]),
+            Pending::DeleteEstimate(1),
+            Pending::DeleteExpense(1),
+            Pending::ConvertEstimate { id: 1, number: "DEV-1".into() },
+            Pending::ImportBackup(serde_json::Value::Null),
+        ] {
+            let message = action.message();
+            assert!(!message.contains("  "), "espaces multiples dans : {message:?}");
         }
     }
 

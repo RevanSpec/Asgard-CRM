@@ -2,12 +2,6 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "asgard-vite",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev:vite"],
-      "port": 5173
-    },
-    {
       "name": "asgard-leptos",
       "runtimeExecutable": "trunk",
       "runtimeArgs": ["serve", "--config", "crates/asgard-ui/Trunk.toml"],

@@ -7,7 +7,8 @@ fn main() {
 ///
 /// La CLI fait deux choses que `cargo build` ignore :
 ///
-/// 1. elle exécute `beforeBuildCommand` (`npm run build`), qui régénère `dist/` ;
+/// 1. elle exécute `beforeBuildCommand` (`trunk build --release`), qui régénère
+///    `crates/asgard-ui/dist/` ;
 /// 2. elle indique à `tauri::generate_context!` d'embarquer ces fichiers plutôt
 ///    que de pointer sur `devUrl`.
 ///

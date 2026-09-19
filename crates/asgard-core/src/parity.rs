@@ -8,8 +8,9 @@
 //! Ce module est ce rapport, sous forme exécutable. Chaque test nomme une
 //! valeur que les golden tests de la phase 0 avaient figée, dit ce que Rust
 //! produit à la place, et justifie l'écart. Les valeurs attendues côté
-//! JavaScript sont recopiées depuis `src/domain/*.test.js` : si l'un des deux
-//! côtés change, la divergence se voit ici.
+//! JavaScript ont été recopiées depuis `src/domain/*.test.js`, supprimés en
+//! phase 5 avec le reste du JavaScript : elles sont désormais figées ici, et
+//! l'historique git garde leur origine.
 //!
 //! Trois catégories d'écart, et rien d'autre :
 //!
