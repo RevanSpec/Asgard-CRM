@@ -1,0 +1,18 @@
+# Fins de ligne normalisées à la validation ; Git décide du reste.
+* text=auto
+
+# Les migrations sqlx sont vérifiées par somme de contrôle, calculée sur le
+# contenu embarqué à la compilation. Un checkout Windows qui les convertirait
+# en CRLF produirait un binaire qui refuse d'ouvrir une base créée par un
+# binaire compilé ailleurs — l'application panique alors au démarrage, sans
+# fenêtre ni message. Ces fichiers restent donc en LF partout.
+*.sql text eol=lf
+
+# Le jeu de référence de la phase 0 sert d'oracle aux deux côtés : mêmes
+# octets, mêmes sommes de contrôle, quelle que soit la machine.
+fixtures/reference-dataset.json text eol=lf
+
+# PDF de référence : binaires, aucune conversion.
+*.pdf binary
+*.png binary
+*.ico binary

@@ -8,7 +8,7 @@ use leptos::prelude::*;
 
 use super::widgets::{Modal, SelectField, TextArea, TextField};
 use crate::actions;
-use crate::state::{use_app, EmailCompose, PaymentForm};
+use crate::state::{use_app, App, EmailCompose, PaymentForm};
 use crate::templates::{self, Kind};
 
 /// Confirmation d'une action destructrice.
@@ -70,8 +70,18 @@ pub fn ConfirmModal() -> impl IntoView {
 ///
 /// Le destinataire vient de la fiche client en mémoire ; s'il a été supprimé,
 /// le champ reste vide et l'utilisateur le saisit.
-pub fn open_email(kind: Kind, id: i64, number: String, description: String, total: f64, date: String, client_id: Option<i64>, company: String) {
-    let app = use_app();
+#[allow(clippy::too_many_arguments)]
+pub fn open_email(
+    app: App,
+    kind: Kind,
+    id: i64,
+    number: String,
+    description: String,
+    total: f64,
+    date: String,
+    client_id: Option<i64>,
+    company: String,
+) {
     let settings = crate::settings::load();
 
     let client = app.snapshot.get_untracked().and_then(|snapshot| {

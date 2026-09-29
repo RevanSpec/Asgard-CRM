@@ -35,7 +35,7 @@ pub fn dashboard() -> impl IntoView {
                     <p>"Aperçu financier en temps réel de votre auto-entreprise."</p>
                 </div>
                 <div class="flex-gap-2">
-                    <button class="btn btn-primary" on:click=move |_| open_invoice_form(creating)>
+                    <button class="btn btn-primary" on:click=move |_| open_invoice_form(app, creating)>
                         {icons::add()}
                         " Nouvelle Facture"
                     </button>
@@ -509,7 +509,7 @@ fn InvoiceRow(invoice: Invoice) -> impl IntoView {
                     <IconButton
                         icon=icons::email
                         title="Envoyer par e-mail"
-                        on_click=Callback::new(move |_| email_invoice(&for_email, Kind::Invoice))
+                        on_click=Callback::new(move |_| email_invoice(app, &for_email, Kind::Invoice))
                     />
                     <IconButton
                         icon=icons::download
