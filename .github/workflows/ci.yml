@@ -85,10 +85,17 @@ jobs:
       - name: Parcourir l'application
         run: node scripts/smoke.mjs target/debug/asgard-crm.exe
 
+      # Les captures ne servent qu'à comprendre un échec : les conserver à
+      # chaque passage remplit le quota de stockage du compte pour rien — ce
+      # qui a fini par faire échouer ce travail alors que le parcours, lui,
+      # était vert. Un quota plein n'est pas un défaut du code : il ne doit
+      # pas rendre la CI rouge.
       - name: Captures d'écran
-        if: always()
+        if: failure()
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: captures
           path: target/smoke/
+          retention-days: 5
           if-no-files-found: ignore
