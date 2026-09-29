@@ -50,7 +50,26 @@
 
 ---
 
-## ⚙️ Installation & Démarrage local
+## 📥 Installation
+
+L'installeur Windows est publié à chaque version :
+**[page des versions](https://github.com/RevanSpec/Asgard-CRM/releases)**.
+Téléchargez le fichier `Asgard CRM_<version>_x64-setup.exe` (3,7 Mo) et
+lancez-le.
+
+> ⚠️ **Windows affichera un avertissement** au premier lancement : « Windows a
+> protégé votre ordinateur ». C'est attendu — le programme n'est pas signé, un
+> certificat de signature coûtant plusieurs centaines d'euros par an pour un
+> projet personnel. Cliquez sur **Informations complémentaires**, puis sur
+> **Exécuter quand même**.
+
+L'installeur télécharge **WebView2** s'il manque à la machine. Il est présent
+d'origine depuis Windows 10 21H2 ; une machine plus ancienne **et hors ligne**
+ne pourra donc pas terminer l'installation.
+
+---
+
+## ⚙️ Démarrage local (développement)
 
 ### Prérequis
 
@@ -128,3 +147,28 @@ Si vous utilisez **Proton Mail Bridge** pour envoyer vos e-mails professionnels 
 > 🔐 Depuis la phase 1, le mot de passe SMTP est conservé dans le **trousseau de votre système** (Gestionnaire d'identifiants Windows, Trousseau macOS, Secret Service Linux) et non plus dans les réglages de l'application. Il ne figure donc plus dans les fichiers de sauvegarde. Un mot de passe déjà enregistré par une version précédente est déplacé automatiquement au premier lancement.
 >
 > La tolérance au certificat auto-signé ne vaut que pour `127.0.0.1` et `localhost` — jamais pour un serveur distant.
+
+---
+
+## 📜 Licence
+
+[MIT](LICENSE) — faites-en ce que vous voulez, y compris dans un produit
+commercial, à condition de conserver la mention de copyright. Aucune garantie
+n'est fournie : c'est un outil écrit pour un usage personnel, publié dans
+l'espoir qu'il serve à d'autres.
+
+Les polices Inter et Outfit, embarquées dans l'interface, sont publiées sous
+[SIL Open Font License 1.1](crates/asgard-ui/assets/fonts/OFL-Inter.txt).
+
+### Publier une version
+
+Le travail [`release.yml`](.github/workflows/release.yml) construit l'installeur
+et l'attache à une *release* GitHub. Il se déclenche sur une étiquette, jamais
+sur une fusion — publier est un geste délibéré :
+
+```bash
+git tag v0.2.0 && git push --tags
+```
+
+La version de l'étiquette doit être celle de `src-tauri/tauri.conf.json`, qui
+nomme l'installeur. Le travail s'arrête avant de compiler si les deux diffèrent.

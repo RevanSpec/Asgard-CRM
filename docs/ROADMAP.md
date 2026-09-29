@@ -5,6 +5,10 @@
 > La migration vers Rust est close — voir [`MIGRATION_RUST.md`](MIGRATION_RUST.md).
 > Ce document ne traite que de ce qui sépare encore l'application d'un produit
 > qu'on peut installer chez quelqu'un sans rien lui expliquer.
+>
+> **Statut : les quatre lots sont livrés.** Les défauts D11 à D18 sont corrigés,
+> chacun avec ses tests et son passage dans le parcours de l'application. Ce qui
+> reste est dit en fin de document, et n'appelle pas de travail aujourd'hui.
 
 ---
 
@@ -216,7 +220,14 @@ demandera plus de migration de données ni de ressaisie client.
 *Critère de sortie* : l'application ne fait plus aucune requête réseau au
 démarrage, et s'affiche avec les polices prévues.
 
-### Lot D — Diffusion en source ouverte *(1 j)* — D17
+### Lot D — Diffusion en source ouverte *(1 j)* — D17 ✅ **livré**
+
+> **Livré.** Licence **MIT**, déclarée dans le fichier `LICENSE` et dans les cinq
+> manifestes de l'espace de travail. `release.yml` construit l'installeur sur une
+> étiquette `v*` et l'attache à une *release*, après avoir vérifié que
+> l'étiquette nomme bien la version de l'application. Le README dit où
+> télécharger, ce que Windows affichera, et ce qu'une machine hors ligne ne
+> pourra pas faire. `package.json` ne reste plus à `0.0.0`.
 
 1. **Choisir une licence** et l'écrire : fichier `LICENSE`, champ `license` dans
    les manifestes, mention dans le README. MIT si l'objectif est que le code
@@ -236,12 +247,12 @@ téléchargeable et installable sur une machine neuve.
 
 ## 4. Ordre, effort, dépendances
 
-| Lot | Défauts | Effort | Dépend de | Pourquoi ce rang |
-|---|---|---|---|---|
-| **A** — Premier lancement honnête | D11, D12, D13 | 2-3 j | — | Seul lot dont l'absence produit une facture fausse |
-| **B** — Conformité de la facture | D14, D15 | 2-3 j | A (mêmes écrans) | Échéance réglementaire connue, migration de données à faire tôt |
-| **C** — Finition visible | D16, D18 | 0,5 j | — | Peu coûteux, visible immédiatement |
-| **D** — Diffusion | D17 | 1 j | C (on publie ce qu'on montre) | Dernier pas avant de rendre le dépôt public |
+| Lot | Défauts | Effort | Dépend de | Pourquoi ce rang | État |
+|---|---|---|---|---|---|
+| **A** — Premier lancement honnête | D11, D12, D13 | 2-3 j | — | Seul lot dont l'absence produit une facture fausse | ✅ |
+| **B** — Conformité de la facture | D14, D15 | 2-3 j | A (mêmes écrans) | Échéance réglementaire connue, migration de données à faire tôt | ✅ |
+| **C** — Finition visible | D16, D18 | 0,5 j | — | Peu coûteux, visible immédiatement | ✅ |
+| **D** — Diffusion | D17 | 1 j | C (on publie ce qu'on montre) | Dernier pas avant de rendre le dépôt public | ✅ |
 
 **Total : 6 à 8 jours.**
 

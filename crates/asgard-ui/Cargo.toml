@@ -1,7 +1,9 @@
 [package]
 name = "asgard-ui"
 version = "0.1.0"
-edition = "2021"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
 description = "Interface d'Asgard CRM — Leptos, compilée en WebAssembly"
 
 [dependencies]
