@@ -13,6 +13,8 @@
   - Génération automatique des numéros de pièces réglementaires (`DEV-CLIENT-ANNEE-XXXX` / `FAC-CLIENT-ANNEE-XXXX`).
   - Conversion d'un devis en facture en 1 clic.
   - Gestion du statut de paiement (Brouillon, Envoyé, Payé, En retard).
+  - **Échéance de règlement** calculée au délai que vous fixez, et mentions obligatoires imprimées (pénalités de retard, indemnité de recouvrement de 40 €, escompte).
+  - **Avoirs** : une facture émise ne se modifie pas — elle s'annule ou se corrige par un avoir, partiel ou total, avec sa propre série de numéros (`AVO-CLIENT-ANNEE-XXXX`).
 - 💸 **Gestion des dépenses** : Suivi des frais professionnels avec catégorisation et méthode de paiement.
 - 📐 **Comptabilité & URSSAF** :
   - Registre réglementaire des recettes encaissées.
@@ -23,6 +25,7 @@
 - 💾 **Confidentialité & Sauvegarde** :
   - Base de données locale **SQLite**, montants stockés en centimes. Aucune donnée ne quitte votre machine.
   - Export et import de sauvegardes complètes pour ne jamais perdre vos données.
+  - **Copie automatique** de la base au premier lancement de chaque journée, les sept dernières conservées à côté de la base.
 
 ---
 
