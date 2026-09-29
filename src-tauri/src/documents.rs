@@ -42,6 +42,8 @@ pub struct IssuerInput {
     pub iban: String,
     #[serde(default)]
     pub custom_color: String,
+    #[serde(default)]
+    pub logo_base64: String,
 }
 
 impl From<IssuerInput> for Issuer {
@@ -64,6 +66,7 @@ impl From<IssuerInput> for Issuer {
             siret: input.siret,
             iban: input.iban,
             accent_colour: or_default(input.custom_color, default.accent_colour),
+            logo: input.logo_base64,
         }
     }
 }
@@ -76,12 +79,15 @@ pub enum Kind {
     Estimate,
     /// Une relance porte sur une facture : même document, autre message.
     Reminder,
+    /// Avoir sur une facture.
+    Credit,
 }
 
 impl Kind {
     pub fn document_kind(self) -> DocumentKind {
         match self {
             Kind::Estimate => DocumentKind::Estimate,
+            Kind::Credit => DocumentKind::CreditNote,
             _ => DocumentKind::Invoice,
         }
     }
@@ -89,6 +95,7 @@ impl Kind {
     fn table(self) -> &'static str {
         match self {
             Kind::Estimate => "estimates",
+            Kind::Credit => "credit_notes",
             _ => "invoices",
         }
     }
@@ -96,7 +103,16 @@ impl Kind {
     fn number_column(self) -> &'static str {
         match self {
             Kind::Estimate => "estimate_number",
+            Kind::Credit => "credit_number",
             _ => "invoice_number",
+        }
+    }
+
+    /// Un avoir nomme la facture qu'il corrige : elle se lit par une jointure.
+    fn corrected_invoice(self) -> (&'static str, &'static str) {
+        match self {
+            Kind::Credit => (", i.invoice_number AS corrects", "LEFT JOIN invoices i ON i.id = d.invoice_id"),
+            _ => ("", ""),
         }
     }
 }
@@ -121,9 +137,10 @@ pub struct Rendered {
 /// sur la pièce, et les autres champs retombent sur un libellé explicite —
 /// exactement ce que faisait le JavaScript.
 async fn load(pool: &SqlitePool, kind: Kind, id: i64) -> Result<(Document, Party), DbError> {
+    let (corrects_column, corrects_join) = kind.corrected_invoice();
     let row = sqlx::query(&format!(
-        "SELECT d.*, c.contact_name, c.address, c.phone, c.email
-         FROM {table} d LEFT JOIN clients c ON c.id = d.client_id
+        "SELECT d.*, c.contact_name, c.address, c.phone, c.email{corrects_column}
+         FROM {table} d LEFT JOIN clients c ON c.id = d.client_id {corrects_join}
          WHERE d.id = ?1 AND d.deleted_at IS NULL",
         table = kind.table()
     ))
@@ -143,6 +160,14 @@ async fn load(pool: &SqlitePool, kind: Kind, id: i64) -> Result<(Document, Party
         amount_tva: from_cents(row.get("amount_tva_cents")),
         amount_total: from_cents(row.get("amount_total_cents")),
         date: CivilDate::parse(&date).unwrap_or(CivilDate::new(1970, 1, 1)),
+        // Les devis n'ont pas de colonne d'échéance ; les factures d'avant la
+        // migration 0002 l'ont nulle.
+        due_date: row
+            .try_get::<Option<String>, _>("due_date")
+            .ok()
+            .flatten()
+            .and_then(|iso| CivilDate::parse(&iso)),
+        corrects: row.try_get::<Option<String>, _>("corrects").ok().flatten(),
     };
 
     let client = Party {
@@ -206,6 +231,7 @@ mod tests {
 
     #[test]
     fn maps_document_kinds() {
+        assert_eq!(Kind::Credit.document_kind(), DocumentKind::CreditNote);
         assert_eq!(Kind::Invoice.document_kind(), DocumentKind::Invoice);
         assert_eq!(Kind::Estimate.document_kind(), DocumentKind::Estimate);
 
@@ -222,6 +248,21 @@ mod tests {
         assert_eq!(issuer.company_name, "Mon Auto-Entreprise");
         assert_eq!(issuer.accent_colour, "#E5A93C");
         assert_eq!(issuer.siret, "123");
+    }
+
+    /// Le logo traverse la frontière : c'est ce qui manquait depuis la phase 4,
+    /// où le générateur Rust ignorait purement et simplement le réglage.
+    #[test]
+    fn the_issuer_carries_its_logo() {
+        let input: IssuerInput =
+            serde_json::from_str(r#"{"logoBase64": "data:image/png;base64,iVBOR"}"#).unwrap();
+        let issuer: Issuer = input.into();
+
+        assert_eq!(issuer.logo, "data:image/png;base64,iVBOR");
+
+        // Sans réglage, pas de logo — et pas d'erreur non plus.
+        let empty: IssuerInput = serde_json::from_str("{}").unwrap();
+        assert!(Issuer::from(empty).logo.is_empty());
     }
 
     #[test]

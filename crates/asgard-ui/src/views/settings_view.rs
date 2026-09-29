@@ -34,6 +34,7 @@ struct Fields {
     address: RwSignal<String>,
     siret: RwSignal<String>,
     iban: RwSignal<String>,
+    payment_terms: RwSignal<String>,
     urssaf_bnc: RwSignal<String>,
     urssaf_bic: RwSignal<String>,
     urssaf_vente: RwSignal<String>,
@@ -59,6 +60,7 @@ impl Fields {
             address: RwSignal::new(s.address),
             siret: RwSignal::new(s.siret),
             iban: RwSignal::new(s.iban),
+            payment_terms: RwSignal::new(s.payment_terms_days.to_string()),
             urssaf_bnc: RwSignal::new(s.urssaf_service_bnc.to_string()),
             urssaf_bic: RwSignal::new(s.urssaf_service_bic.to_string()),
             urssaf_vente: RwSignal::new(s.urssaf_vente.to_string()),
@@ -82,6 +84,11 @@ impl Fields {
             crate::validation::parse_amount(&field.get()).unwrap_or(fallback)
         };
 
+        let days = crate::validation::parse_amount(&self.payment_terms.get())
+            .filter(|value| (0.0..=365.0).contains(value))
+            .map(|value| value as u32)
+            .unwrap_or(previous.payment_terms_days);
+
         Settings {
             company_name: self.company_name.get(),
             contact_name: self.contact_name.get(),
@@ -90,6 +97,7 @@ impl Fields {
             address: self.address.get(),
             siret: self.siret.get(),
             iban: self.iban.get(),
+            payment_terms_days: days,
             urssaf_service_bnc: rate(self.urssaf_bnc, previous.urssaf_service_bnc),
             urssaf_service_bic: rate(self.urssaf_bic, previous.urssaf_service_bic),
             urssaf_vente: rate(self.urssaf_vente, previous.urssaf_vente),
@@ -190,18 +198,23 @@ fn Company(fields: Fields) -> impl IntoView {
                 </div>
                 <TextField label="SIRET" value=fields.siret />
                 <TextField label="IBAN bancaire (Règlement)" value=fields.iban />
+                <FieldWithHint
+                    label="Délai de règlement (jours)"
+                    value=fields.payment_terms
+                    hint="Échéance imprimée sur les factures. 30 jours par défaut."
+                />
             </div>
         </div>
     }
 }
 
-/// Taux de cotisation, avec sa valeur par défaut rappelée dessous.
+/// Champ numérique accompagné d'un repère — un taux, un délai.
 ///
 /// Champ texte plutôt que numérique : une virgule décimale y est acceptée,
 /// et un `type="number"` sans `step` bloquerait l'envoi du formulaire sur
 /// « 12.3 ».
 #[component]
-fn RateField(label: &'static str, value: RwSignal<String>, hint: &'static str) -> impl IntoView {
+fn FieldWithHint(label: &'static str, value: RwSignal<String>, hint: &'static str) -> impl IntoView {
     view! {
         <div class="form-group">
             <label class="form-label">{label}</label>
@@ -235,17 +248,17 @@ fn Urssaf(fields: Fields) -> impl IntoView {
                 </label>
             </div>
             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1.25rem">
-                <RateField
+                <FieldWithHint
                     label="Taux Service BNC (%)"
                     value=fields.urssaf_bnc
                     hint="Par défaut 21.1% (Libérale BNC)"
                 />
-                <RateField
+                <FieldWithHint
                     label="Taux Service BIC (%)"
                     value=fields.urssaf_bic
                     hint="Par défaut 21.1% (Artisanal/Comm. BIC)"
                 />
-                <RateField
+                <FieldWithHint
                     label="Taux Vente BIC (%)"
                     value=fields.urssaf_vente
                     hint="Par défaut 12.3% (Vente marchandises)"
@@ -352,12 +365,6 @@ fn Branding(fields: Fields) -> impl IntoView {
                     </div>
                     <span class="metric-subtext">
                         "Recommandé : PNG transparent, format paysage (hauteur max 60px)."
-                    </span>
-                    // Régression connue depuis la phase 4 : le générateur Rust
-                    // n'imprime pas encore le logo. Mieux vaut le dire que
-                    // laisser croire qu'il figure sur les factures.
-                    <span class="metric-subtext" style="display: block; margin-top: 0.4rem">
-                        "⚠️ Le logo n'apparaît pas encore sur les PDF depuis le passage du générateur en Rust."
                     </span>
                 </div>
             </div>
@@ -579,6 +586,12 @@ fn Backup() -> impl IntoView {
             <p class="metric-subtext" style="margin-bottom: 1.25rem; line-height: 1.5">
                 "Vos données sont stockées localement dans votre base de données locale. Exportez régulièrement des sauvegardes pour éviter toute perte de données en cas de panne de votre ordinateur."
             </p>
+            // Les copies quotidiennes protègent d'un fichier abîmé, pas d'un
+            // disque perdu : elles vivent à côté de la base. Le dire évite de
+            // s'en croire dispensé d'exporter.
+            <p class="metric-subtext" style="margin-bottom: 1.25rem; line-height: 1.5">
+                "📦 Une copie de la base est prise automatiquement à chaque premier lancement de la journée, et les sept dernières sont conservées dans le dossier « backups », à côté de la base. Elles protègent d'un fichier abîmé — pas d'un disque perdu : pour cela, exportez ailleurs."
+            </p>
             <div style="display: flex; gap: 1rem">
                 <button type="button" class="btn btn-primary" on:click=export>
                     "Exporter les données (.json)"
@@ -646,6 +659,25 @@ mod tests {
             fields.urssaf_bnc.set("pas un nombre".into());
             let read = fields.read(&Settings::default());
             assert_eq!(read.urssaf_service_bnc, 21.1);
+        });
+    }
+
+    /// Une échéance figure sur un document qui ne se corrige que par avoir :
+    /// une saisie illisible ne doit pas la déplacer en silence.
+    #[test]
+    fn an_unreadable_payment_delay_keeps_the_previous_value() {
+        let owner = leptos::prelude::Owner::new();
+        owner.with(|| {
+            let fields = Fields::from(Settings::default());
+
+            fields.payment_terms.set("quarante".into());
+            assert_eq!(fields.read(&Settings::default()).payment_terms_days, 30);
+
+            fields.payment_terms.set("-5".into());
+            assert_eq!(fields.read(&Settings::default()).payment_terms_days, 30);
+
+            fields.payment_terms.set("45".into());
+            assert_eq!(fields.read(&Settings::default()).payment_terms_days, 45);
         });
     }
 

@@ -26,6 +26,8 @@ use printpdf::*;
 pub enum DocumentKind {
     Invoice,
     Estimate,
+    /// Avoir : annule ou corrige une facture émise, qui ne se modifie pas.
+    CreditNote,
 }
 
 impl DocumentKind {
@@ -33,27 +35,41 @@ impl DocumentKind {
         self == DocumentKind::Invoice
     }
 
+    /// Une pièce qui constate une créance, ou son annulation : tout sauf un
+    /// devis. Le cadre de signature et la largeur du pied de page en dépendent.
+    fn is_binding(self) -> bool {
+        self != DocumentKind::Estimate
+    }
+
     fn banner(self) -> &'static str {
-        if self.is_invoice() {
-            "FACTURE"
-        } else {
-            "DEVIS"
+        match self {
+            DocumentKind::Invoice => "FACTURE",
+            DocumentKind::Estimate => "DEVIS",
+            DocumentKind::CreditNote => "AVOIR",
         }
     }
 
     fn number_label(self) -> &'static str {
-        if self.is_invoice() {
-            "N° Facture :"
-        } else {
-            "N° Devis :"
+        match self {
+            DocumentKind::Invoice => "N° Facture :",
+            DocumentKind::Estimate => "N° Devis :",
+            DocumentKind::CreditNote => "N° Avoir :",
         }
     }
 
     fn footer_noun(self) -> &'static str {
-        if self.is_invoice() {
-            "Facture"
-        } else {
-            "Devis"
+        match self {
+            DocumentKind::Invoice => "Facture",
+            DocumentKind::Estimate => "Devis",
+            DocumentKind::CreditNote => "Avoir",
+        }
+    }
+
+    /// Libellé du total. Un avoir n'est pas « à payer » : il est dû au client.
+    fn total_label(self) -> &'static str {
+        match self {
+            DocumentKind::CreditNote => "TOTAL AVOIR (TTC) :",
+            _ => "TOTAL NET À PAYER (TTC) :",
         }
     }
 }
@@ -69,6 +85,12 @@ pub struct Document {
     pub amount_tva: Money,
     pub amount_total: Money,
     pub date: CivilDate,
+    /// Échéance de règlement. Absente sur les factures émises avant qu'elle ne
+    /// soit enregistrée, et sur les devis, qui n'en ont pas.
+    pub due_date: Option<CivilDate>,
+    /// Numéro de la facture qu'un avoir corrige. La référence est obligatoire :
+    /// un avoir isolé ne se rattache à rien.
+    pub corrects: Option<String>,
 }
 
 /// Coordonnées du client destinataire.
@@ -92,6 +114,9 @@ pub struct Issuer {
     pub siret: String,
     pub iban: String,
     pub accent_colour: String,
+    /// Logo, tel que les réglages le stockent : une URL de données
+    /// (`data:image/png;base64,…`). Vide quand l'émetteur n'en a pas.
+    pub logo: String,
 }
 
 impl Default for Issuer {
@@ -105,6 +130,7 @@ impl Default for Issuer {
             siret: String::new(),
             iban: String::new(),
             accent_colour: "#E5A93C".into(),
+            logo: String::new(),
         }
     }
 }
@@ -124,6 +150,11 @@ struct Canvas<'a> {
 
 impl Canvas<'_> {
     /// Écrit un texte, avec alignement calculé — printpdf ne sait pas aligner.
+    ///
+    /// Beaucoup d'arguments, mais ce sont ceux d'une primitive de mise en page :
+    /// les regrouper dans une structure allongerait les dizaines d'appels sans
+    /// rien clarifier.
+    #[allow(clippy::too_many_arguments)]
     fn text(&self, content: &str, size: f32, x: f32, y: f32, align: Align, bold: bool, colour: Rgb) {
         let font = if bold { self.bold } else { self.regular };
         let start = match align {
@@ -137,6 +168,7 @@ impl Canvas<'_> {
     }
 
     /// Écrit un texte en le repliant dans une largeur maximale.
+    #[allow(clippy::too_many_arguments)]
     fn wrapped(&self, content: &str, size: f32, x: f32, y: f32, max_width: f32, bold: bool, colour: Rgb) {
         // 5 mm d'interligne, comme l'espacement des blocs de l'original.
         for (index, line) in wrap(content, max_width, size, bold).iter().enumerate() {
@@ -198,12 +230,73 @@ fn type_label(service_type: ServiceType) -> &'static str {
     }
 }
 
+/// Hauteur maximale du logo dans le bandeau, en millimètres.
+const LOGO_MAX_HEIGHT: f32 = 24.0;
+
+/// Largeur maximale du logo, en millimètres.
+const LOGO_MAX_WIDTH: f32 = 60.0;
+
+/// Décode une URL de données en octets d'image.
+///
+/// Les réglages stockent le logo sous la forme que produit `FileReader` :
+/// `data:image/png;base64,iVBOR…`. Rien d'autre n'est accepté — un chemin de
+/// fichier ou une URL distante n'aurait pas de sens dans un PDF.
+pub fn decode_data_url(url: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+
+    let rest = url.strip_prefix("data:")?;
+    let (mime, data) = rest.split_once(",")?;
+    if !mime.starts_with("image/") || !mime.ends_with(";base64") {
+        return None;
+    }
+
+    base64::engine::general_purpose::STANDARD.decode(data).ok()
+}
+
+/// Taille d'affichage du logo, en millimètres, et sa position verticale.
+///
+/// Reprend le calcul de la version jsPDF : hauteur de 24 mm, réduite si la
+/// largeur dépasse 60 mm, et centrage vertical dans le bandeau.
+pub fn logo_placement(pixels_wide: u32, pixels_high: u32) -> (f32, f32, f32) {
+    if pixels_wide == 0 || pixels_high == 0 {
+        return (0.0, 0.0, 8.0);
+    }
+
+    let ratio = pixels_wide as f32 / pixels_high as f32;
+    let mut height = LOGO_MAX_HEIGHT;
+    let mut width = ratio * height;
+
+    if width > LOGO_MAX_WIDTH {
+        width = LOGO_MAX_WIDTH;
+        height = width / ratio;
+    }
+
+    let top = 8.0 + (LOGO_MAX_HEIGHT - height) / 2.0;
+    (width, height, top)
+}
+
+/// Conditions de retard, obligatoires sur une facture entre professionnels.
+///
+/// Le taux est exprimé en multiple de l'intérêt légal plutôt qu'en pourcentage
+/// figé : l'intérêt légal change deux fois par an, et un nombre écrit en dur
+/// dans le code serait faux six mois plus tard.
+const LATE_PAYMENT_TERMS: &str = concat!(
+    "En cas de retard de paiement : pénalités au taux de trois fois l'intérêt légal, ",
+    "exigibles sans rappel, et indemnité forfaitaire pour frais de recouvrement de 40 € ",
+    "(art. L441-10 et D441-5 du code de commerce). Escompte pour paiement anticipé : néant.",
+);
+
 /// Mentions légales du bas de page.
 ///
 /// Le texte est réglementaire et dépend du type de document et du taux de TVA.
 /// Le sortir du code de dessin le rend testable — c'est la partie qui expose à
 /// un contrôle, pas la position des traits.
-pub fn legal_notice(kind: DocumentKind, tva_rate: Money, iban: &str) -> String {
+pub fn legal_notice(
+    kind: DocumentKind,
+    tva_rate: Money,
+    iban: &str,
+    due_date: Option<CivilDate>,
+) -> String {
     let mut notice = String::new();
 
     if kind.is_invoice() {
@@ -218,9 +311,37 @@ pub fn legal_notice(kind: DocumentKind, tva_rate: Money, iban: &str) -> String {
         } else {
             iban
         };
-        notice.push_str(&format!(
-            "Mode de règlement : Virement bancaire sous 30 jours. IBAN : {iban}"
-        ));
+        // L'échéance figure ici aussi : le pied de page est l'endroit où se
+        // lisent les conditions de règlement, et une facture sans échéance
+        // enregistrée conserve la formule générale d'avant.
+        match due_date {
+            Some(due) => notice.push_str(&format!(
+                "Mode de règlement : Virement bancaire. Échéance : {}. IBAN : {iban}\n",
+                due.format_fr()
+            )),
+            None => notice.push_str(&format!(
+                "Mode de règlement : Virement bancaire sous 30 jours. IBAN : {iban}\n"
+            )),
+        }
+        // Mentions obligatoires entre professionnels : articles L441-10 et
+        // D441-5 du code de commerce. Leur absence est sanctionnable, et elles
+        // manquaient depuis l'origine.
+        notice.push_str(LATE_PAYMENT_TERMS);
+    } else if kind == DocumentKind::CreditNote {
+        if tva_rate.is_zero() {
+            notice.push_str("TVA non applicable, article 293 B du CGI.\n");
+        }
+        notice.push_str(
+            "Dispensé d'immatriculation au registre du commerce et des sociétés (RCS) et au répertoire des métiers (RM).\n",
+        );
+        // Un avoir ne fait pas naître de créance : ni échéance, ni pénalités.
+        // Il annonce ce qu'il corrige, et comment le montant revient au client.
+        notice.push_str(
+            "Le présent avoir annule ou corrige la facture mentionnée ci-dessus, à concurrence du montant indiqué.\n",
+        );
+        notice.push_str(
+            "Il est imputable sur une prochaine facture ou remboursé par virement, au choix du client.",
+        );
     } else {
         notice.push_str("Devis valable pour une durée de 3 mois à compter de la date d'émission.\n");
         notice.push_str(
@@ -266,16 +387,47 @@ pub fn render(
 
     // 1. Bandeau de tête
     canvas.filled_rect(0.0, 0.0, PAGE_WIDTH, 40.0, NAVY);
-    canvas.text("ASGARD CRM", 22.0, 20.0, 25.0, Align::Left, true, accent);
-    canvas.text(
-        "Gestion & Facturation Auto-Entreprise",
-        9.0,
-        20.0,
-        32.0,
-        Align::Left,
-        false,
-        WHITE,
-    );
+
+    // Le logo prend la place du titre. Une image illisible ne fait pas échouer
+    // l'édition : le titre reparaît, comme le faisait le `catch` du JavaScript.
+    let logo = decode_data_url(&issuer.logo)
+        .and_then(|bytes| ::image::load_from_memory(&bytes).ok());
+
+    if let Some(picture) = logo {
+        use ::image::GenericImageView;
+        let (pixels_wide, pixels_high) = picture.dimensions();
+        let (width, height, top) = logo_placement(pixels_wide, pixels_high);
+
+        // printpdf place l'image par son coin inférieur gauche, à 300 ppp par
+        // défaut : l'échelle ramène ses pixels aux millimètres voulus.
+        let scale = |target_mm: f32, pixels: u32| {
+            let natural_pt = pixels as f32 * 72.0 / 300.0;
+            (target_mm * 72.0 / 25.4) / natural_pt
+        };
+
+        printpdf::Image::from_dynamic_image(&picture).add_to_layer(
+            doc.get_page(page).get_layer(layer),
+            printpdf::ImageTransform {
+                translate_x: Some(Mm(20.0)),
+                translate_y: Some(layout::flip(top + height)),
+                scale_x: Some(scale(width, pixels_wide)),
+                scale_y: Some(scale(height, pixels_high)),
+                ..Default::default()
+            },
+        );
+    } else {
+        canvas.text("ASGARD CRM", 22.0, 20.0, 25.0, Align::Left, true, accent);
+        canvas.text(
+            "Gestion & Facturation Auto-Entreprise",
+            9.0,
+            20.0,
+            32.0,
+            Align::Left,
+            false,
+            WHITE,
+        );
+    }
+
     canvas.text(kind.banner(), 20.0, PAGE_WIDTH - 20.0, 27.0, Align::Right, true, WHITE);
 
     // 2. Blocs émetteur et destinataire
@@ -309,6 +461,30 @@ pub fn render(
         false,
         NAVY,
     );
+    if let Some(invoice) = document.corrects.as_deref() {
+        canvas.text(
+            &format!("Facture corrigée : {invoice}"),
+            9.0,
+            PAGE_WIDTH - 20.0,
+            y + 18.0,
+            Align::Right,
+            true,
+            NAVY,
+        );
+    }
+    // L'échéance est une mention obligatoire (art. L441-9 du code de commerce),
+    // et le client la cherche ici, à côté de la date d'émission.
+    if let Some(due) = document.due_date.filter(|_| kind.is_invoice()) {
+        canvas.text(
+            &format!("Échéance : {}", due.format_fr()),
+            9.0,
+            PAGE_WIDTH - 20.0,
+            y + 18.0,
+            Align::Right,
+            true,
+            NAVY,
+        );
+    }
 
     // 3. Tableau de la prestation
     let y = 110.0;
@@ -352,15 +528,16 @@ pub fn render(
     canvas.text(&euros(document.amount_tva), 9.0, PAGE_WIDTH - 22.0, y + 6.0, Align::Right, false, NAVY);
 
     canvas.filled_rect(100.0, y + 12.0, PAGE_WIDTH - 120.0, 10.0, NAVY);
-    canvas.text("TOTAL NET À PAYER (TTC) :", 10.0, 135.0, y + 18.5, Align::Right, true, WHITE);
+    canvas.text(kind.total_label(), 10.0, 135.0, y + 18.5, Align::Right, true, WHITE);
     canvas.text(&euros(document.amount_total), 10.0, PAGE_WIDTH - 22.0, y + 18.5, Align::Right, true, accent);
 
     // 5. Mentions légales
     let y = 190.0;
     canvas.text("MENTIONS LÉGALES & CONDITIONS", 8.0, 20.0, y, Align::Left, true, NAVY);
 
-    let notice = legal_notice(kind, document.tva_rate, &issuer.iban);
-    let max_width = if kind.is_invoice() { PAGE_WIDTH - 40.0 } else { 95.0 };
+    let notice = legal_notice(kind, document.tva_rate, &issuer.iban, document.due_date);
+    // Le devis réserve la moitié droite au cadre de signature.
+    let max_width = if kind.is_binding() { PAGE_WIDTH - 40.0 } else { 95.0 };
 
     let mut line_y = y + 5.0;
     for paragraph in notice.split('\n') {
@@ -371,7 +548,7 @@ pub fn render(
     }
 
     // Cadre de signature, pour les devis seulement.
-    if !kind.is_invoice() {
+    if !kind.is_binding() {
         canvas.text(
             "Cadre Signature Client (Bon pour accord) :",
             7.0,
@@ -393,7 +570,7 @@ pub fn render(
     );
     canvas.text(&footer, 7.0, PAGE_WIDTH / 2.0, 267.0, Align::Center, false, GREY);
 
-    Ok(doc.save_to_bytes()?)
+    doc.save_to_bytes()
 }
 
 #[cfg(test)]

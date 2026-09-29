@@ -84,6 +84,52 @@ impl CivilDate {
     pub fn month_index(self) -> usize {
         (self.month.clamp(1, 12) - 1) as usize
     }
+
+    /// Date au format ISO `AAAA-MM-JJ`, telle que la base la stocke.
+    pub fn to_iso(self) -> String {
+        format!("{:04}-{:02}-{:02}", self.year, self.month, self.day)
+    }
+
+    /// Date décalée de `days` jours — l'échéance d'une facture, par exemple.
+    ///
+    /// Le calendrier est parcouru mois par mois plutôt que converti en jours
+    /// juliens : les délais en usage se comptent en dizaines de jours, et un
+    /// calcul qu'on peut lire vaut mieux ici qu'un calcul astucieux.
+    pub fn plus_days(self, days: u32) -> Self {
+        let mut date = Self {
+            month: self.month.clamp(1, 12),
+            day: self.day.max(1),
+            ..self
+        };
+
+        for _ in 0..days {
+            let last = days_in_month(date.year, date.month);
+            if date.day < last {
+                date.day += 1;
+            } else if date.month < 12 {
+                date.month += 1;
+                date.day = 1;
+            } else {
+                date.year += 1;
+                date.month = 1;
+                date.day = 1;
+            }
+        }
+
+        date
+    }
+}
+
+/// Nombre de jours d'un mois, année bissextile comprise.
+fn days_in_month(year: i32, month: u32) -> u32 {
+    match month {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        // Règle grégorienne complète : 2100 ne sera pas bissextile.
+        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
+        2 => 28,
+        _ => 30,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,5 +259,37 @@ mod tests {
         assert!(ServiceType::Vente.is_sale());
         assert!(!ServiceType::ServiceBnc.is_sale());
         assert!(!ServiceType::ServiceBic.is_sale());
+    }
+
+    /// L'échéance d'une facture se calcule avec ça : une erreur de bord ferait
+    /// figurer une date fausse sur un document qui ne se corrige que par avoir.
+    #[test]
+    fn dates_move_forward_by_days() {
+        let date = CivilDate::new(2026, 4, 18);
+
+        assert_eq!(date.plus_days(0), date);
+        assert_eq!(date.plus_days(1), CivilDate::new(2026, 4, 19));
+        assert_eq!(date.plus_days(30), CivilDate::new(2026, 5, 18));
+        // Avril compte 30 jours : le 30e jour après le 18 tombe en mai.
+        assert_eq!(CivilDate::new(2026, 4, 30).plus_days(1), CivilDate::new(2026, 5, 1));
+    }
+
+    #[test]
+    fn dates_cross_years_and_leap_days() {
+        assert_eq!(CivilDate::new(2026, 12, 20).plus_days(30), CivilDate::new(2027, 1, 19));
+        assert_eq!(CivilDate::new(2026, 12, 31).plus_days(1), CivilDate::new(2027, 1, 1));
+
+        // 2028 est bissextile, 2027 ne l'est pas.
+        assert_eq!(CivilDate::new(2028, 2, 28).plus_days(1), CivilDate::new(2028, 2, 29));
+        assert_eq!(CivilDate::new(2027, 2, 28).plus_days(1), CivilDate::new(2027, 3, 1));
+        // Année séculaire non bissextile.
+        assert_eq!(CivilDate::new(2100, 2, 28).plus_days(1), CivilDate::new(2100, 3, 1));
+        assert_eq!(CivilDate::new(2000, 2, 28).plus_days(1), CivilDate::new(2000, 2, 29));
+    }
+
+    #[test]
+    fn dates_are_written_back_in_iso() {
+        assert_eq!(CivilDate::new(2026, 4, 8).to_iso(), "2026-04-08");
+        assert_eq!(CivilDate::parse("2026-04-08T10:00:00Z").unwrap().to_iso(), "2026-04-08");
     }
 }

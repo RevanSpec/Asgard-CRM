@@ -151,10 +151,15 @@ pub async fn execute(app: App, action: Pending) {
 
         Pending::ConvertEstimate { id, .. } => {
             #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
             struct Args {
                 id: i64,
+                /// La facture issue d'un devis porte la même échéance qu'une
+                /// facture saisie directement.
+                payment_terms_days: u32,
             }
-            match ipc::invoke::<_, asgard_ipc::Invoice>("convert_estimate", &Args { id }).await {
+            let args = Args { id, payment_terms_days: settings::load().payment_terms_days };
+            match ipc::invoke::<_, asgard_ipc::Invoice>("convert_estimate", &args).await {
                 Ok(invoice) => {
                     app.reload().await;
                     app.tab.set(crate::state::Tab::Invoices);
@@ -191,7 +196,8 @@ pub async fn save_client(app: App, client: ClientInput) -> bool {
     }
 }
 
-/// Crée une facture. L'hôte attribue le numéro et calcule TVA et total.
+/// Crée une facture. L'hôte attribue le numéro, calcule TVA et total, et
+/// déduit l'échéance du délai de règlement porté par la saisie.
 pub async fn create_invoice(app: App, invoice: DocumentInput) -> bool {
     #[derive(Serialize)]
     struct Args {
@@ -263,6 +269,31 @@ pub async fn record_payment(app: App, payment: PaymentInput, number: String) -> 
     }
 }
 
+/// Émet un avoir sur une facture.
+pub async fn create_credit_note(app: App, credit: asgard_ipc::CreditNoteInput) -> bool {
+    #[derive(Serialize)]
+    struct Args {
+        credit: asgard_ipc::CreditNoteInput,
+    }
+    match ipc::invoke::<_, asgard_ipc::CreditNote>("create_credit_note", &Args { credit }).await {
+        Ok(credit) => {
+            app.reload().await;
+            app.inform(
+                "Avoir émis",
+                format!(
+                    "L'avoir {} corrige la facture {}.",
+                    credit.credit_number, credit.invoice_number
+                ),
+            );
+            true
+        }
+        Err(error) => {
+            app.report_as("Impossible d'émettre l'avoir", error);
+            false
+        }
+    }
+}
+
 /// Coordonnées de l'émetteur imprimées sur le PDF, tirées des réglages.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -275,6 +306,8 @@ struct IssuerArgs {
     siret: String,
     iban: String,
     custom_color: String,
+    /// URL de données du logo, imprimé en tête de pièce.
+    logo_base64: String,
 }
 
 impl From<&Settings> for IssuerArgs {
@@ -288,6 +321,7 @@ impl From<&Settings> for IssuerArgs {
             siret: s.siret.clone(),
             iban: s.iban.clone(),
             custom_color: s.custom_color.clone(),
+            logo_base64: s.logo_base64.clone(),
         }
     }
 }
@@ -314,6 +348,7 @@ pub async fn export_pdf(app: App, kind: Kind, id: i64) {
 fn saved_notice(kind: Kind, path: &str) -> String {
     match kind {
         Kind::Estimate => format!("Devis enregistré : {path}"),
+        Kind::Credit => format!("Avoir enregistré : {path}"),
         Kind::Invoice | Kind::Reminder => format!("Facture enregistrée : {path}"),
     }
 }
@@ -323,6 +358,7 @@ fn saved_notice(kind: Kind, path: &str) -> String {
 fn sent_notice(kind: Kind, recipient: &str) -> String {
     match kind {
         Kind::Estimate => format!("Le devis a été envoyé avec succès à {recipient} !"),
+        Kind::Credit => format!("L'avoir a été envoyé avec succès à {recipient} !"),
         Kind::Invoice | Kind::Reminder => {
             format!("La facture a été envoyée avec succès à {recipient} !")
         }

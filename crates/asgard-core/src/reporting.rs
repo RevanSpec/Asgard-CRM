@@ -136,9 +136,9 @@ pub fn monthly_series(
     year: i32,
     basis: Basis,
 ) -> MonthlySeries {
-    let mut ca = vec![Money::ZERO; 12];
-    let mut charges = vec![Money::ZERO; 12];
-    let mut spent = vec![Money::ZERO; 12];
+    let mut ca = [Money::ZERO; 12];
+    let mut charges = [Money::ZERO; 12];
+    let mut spent = [Money::ZERO; 12];
 
     for invoice in invoices.iter().filter(|i| basis.includes(i)) {
         // L'encaissé se range au mois du règlement, le facturé au mois d'émission.

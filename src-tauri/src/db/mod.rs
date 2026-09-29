@@ -11,11 +11,12 @@
 //! - **une numérotation transactionnelle** protégée par une contrainte
 //!   d'unicité (défaut D3).
 
+pub mod autosave;
 pub mod backup;
 pub mod money;
 pub mod numbering;
 pub mod repo;
-mod seed;
+pub(crate) mod seed;
 
 use std::path::PathBuf;
 
@@ -109,7 +110,14 @@ mod tests {
 
         assert_eq!(
             tables,
-            vec!["clients", "document_sequences", "estimates", "expenses", "invoices"]
+            vec![
+                "clients",
+                "credit_notes",
+                "document_sequences",
+                "estimates",
+                "expenses",
+                "invoices"
+            ]
         );
     }
 

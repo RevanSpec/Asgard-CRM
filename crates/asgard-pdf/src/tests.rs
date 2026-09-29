@@ -32,6 +32,7 @@ fn issuer() -> Issuer {
         siret: "839 204 123 00019".into(),
         iban: "FR76 3000 2000 0001 2345 6789 012".into(),
         accent_colour: "#E5A93C".into(),
+        logo: String::new(),
     }
 }
 
@@ -55,6 +56,8 @@ fn coffee_invoice() -> Document {
         tva_rate: dec!(5.5),
         amount_tva: dec!(79.77),
         amount_total: dec!(1530.12),
+        due_date: Some(CivilDate::new(2026, 5, 18)),
+        corrects: None,
         date: CivilDate::new(2026, 4, 18),
     }
 }
@@ -247,12 +250,25 @@ fn prints_everything_the_javascript_version_printed() {
     assert!(!expected.is_empty(), "la référence doit contenir du texte");
 
     for fragment in &expected {
+        if REPLACED_BY_A_DATED_DUE_DATE.iter().any(|old| fragment.starts_with(old)) {
+            continue;
+        }
         assert!(
             ours.contains(fragment.as_str()),
             "fragment absent du PDF produit : {fragment:?}\n---\nproduit : {ours}"
         );
     }
+
+    // L'écart est unique, et il ajoute : la phrase annonçait un délai sans
+    // jamais nommer de date. Ce qu'elle portait — virement, IBAN — se retrouve
+    // dans la nouvelle, avec l'échéance en plus.
+    assert!(ours.contains("Mode de règlement : Virement bancaire. Échéance : 18/05/2026."));
+    assert!(ours.contains("IBAN : FR76 3000 2000 0001 2345 6789 012"));
 }
+
+/// Seule phrase du PDF de référence que le port ne reproduit plus mot pour mot.
+const REPLACED_BY_A_DATED_DUE_DATE: [&str; 1] =
+    ["Mode de règlement : Virement bancaire sous 30 jours."];
 
 #[test]
 fn prints_the_estimate_signature_block() {
@@ -338,21 +354,205 @@ fn amounts_always_carry_two_decimals() {
 
 #[test]
 fn legal_notices_match_the_javascript_wording() {
-    let invoice = legal_notice(DocumentKind::Invoice, dec!(20), "FR76 1234");
+    let due = Some(CivilDate::new(2026, 5, 18));
+    let invoice = legal_notice(DocumentKind::Invoice, dec!(20), "FR76 1234", due);
     assert!(invoice.contains("Dispensé d'immatriculation au registre du commerce"));
     assert!(invoice.contains("IBAN : FR76 1234"));
     assert!(!invoice.contains("293 B"));
 
-    let exempt = legal_notice(DocumentKind::Invoice, dec!(0), "");
+    let exempt = legal_notice(DocumentKind::Invoice, dec!(0), "", due);
     assert!(exempt.starts_with("TVA non applicable, article 293 B du CGI."));
     assert!(
         exempt.contains("FR76 0000 0000 0000 0000 0000 000"),
         "un IBAN absent retombe sur le gabarit, comme en JavaScript"
     );
 
-    let estimate = legal_notice(DocumentKind::Estimate, dec!(20), "FR76 1234");
+    let estimate = legal_notice(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
     assert!(estimate.contains("valable pour une durée de 3 mois"));
     assert!(estimate.contains("Bon pour accord"));
+}
+
+/// Mentions obligatoires entre professionnels. Elles manquaient depuis
+/// l'origine : la version JavaScript ne les imprimait pas non plus, et leur
+/// absence est sanctionnable.
+#[test]
+fn an_invoice_carries_the_mandatory_late_payment_terms() {
+    let notice = legal_notice(
+        DocumentKind::Invoice,
+        dec!(20),
+        "FR76 1234",
+        Some(CivilDate::new(2026, 5, 18)),
+    );
+
+    assert!(notice.contains("Échéance : 18/05/2026"));
+    assert!(notice.contains("trois fois l'intérêt légal"));
+    assert!(notice.contains("indemnité forfaitaire pour frais de recouvrement de 40 €"));
+    assert!(notice.contains("Escompte pour paiement anticipé : néant"));
+
+    // Un devis n'annonce ni échéance ni pénalités : il ne fait pas naître de
+    // créance.
+    let estimate = legal_notice(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
+    assert!(!estimate.contains("40 €"));
+    assert!(!estimate.contains("Échéance"));
+}
+
+/// Une facture d'avant l'enregistrement des échéances conserve la formule
+/// générale : inventer une date sur une pièce déjà émise serait pire.
+#[test]
+fn an_invoice_without_a_recorded_due_date_keeps_the_former_wording() {
+    let notice = legal_notice(DocumentKind::Invoice, dec!(20), "FR76 1234", None);
+
+    assert!(notice.contains("Virement bancaire sous 30 jours"));
+    assert!(!notice.contains("Échéance :"));
+    // Les pénalités, elles, ne dépendent pas de l'échéance.
+    assert!(notice.contains("40 €"));
+}
+
+#[test]
+fn the_due_date_is_printed_next_to_the_issue_date() {
+    let pdf = render(
+        DocumentKind::Invoice,
+        &coffee_invoice(),
+        &coffee_client(),
+        &issuer(),
+        generated_at(),
+    )
+    .unwrap();
+
+    let text = extract_text(&pdf).join(" | ");
+    assert!(text.contains("Échéance : 18/05/2026"), "texte produit : {text}");
+}
+
+/// Un avoir est une pièce à part : son cartouche, son total et ses mentions
+/// diffèrent d'une facture, et il nomme la facture qu'il corrige.
+#[test]
+fn a_credit_note_names_the_invoice_it_corrects() {
+    let mut document = coffee_invoice();
+    document.number = "AVO-ASGARDCOFF-2026-0001".into();
+    document.corrects = Some("FAC-ASGARDCOFF-2026-0003".into());
+    document.due_date = None;
+
+    let pdf = render(
+        DocumentKind::CreditNote,
+        &document,
+        &coffee_client(),
+        &issuer(),
+        generated_at(),
+    )
+    .unwrap();
+
+    let text = extract_text(&pdf).join(" | ");
+
+    assert!(text.contains("AVOIR"));
+    assert!(text.contains("N° Avoir :"));
+    assert!(text.contains("AVO-ASGARDCOFF-2026-0001"));
+    assert!(text.contains("Facture corrigée : FAC-ASGARDCOFF-2026-0003"));
+    // Un avoir est dû au client : il n'est pas « à payer ».
+    assert!(text.contains("TOTAL AVOIR (TTC) :"));
+    assert!(!text.contains("TOTAL NET À PAYER"));
+    // Ni créance, ni signature : pas de pénalités, pas de cadre.
+    assert!(!text.contains("40 €"));
+    assert!(!text.contains("Échéance"));
+    assert!(!text.contains("Bon pour accord"));
+    assert!(text.contains("annule ou corrige la facture"));
+}
+
+#[test]
+fn a_credit_note_carries_the_cgi_notice_when_exempt() {
+    let exempt = legal_notice(DocumentKind::CreditNote, dec!(0), "FR76 1234", None);
+    assert!(exempt.starts_with("TVA non applicable, article 293 B du CGI."));
+
+    let taxed = legal_notice(DocumentKind::CreditNote, dec!(20), "FR76 1234", None);
+    assert!(!taxed.contains("293 B"));
+}
+
+/// PNG 2×2 aux couleurs de la marque, produit à la main : le plus petit
+/// fichier qui permette d'éprouver le décodage et le placement.
+const TINY_PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGN4utIGiBggFAA0ygcp9kDWlAAAAABJRU5ErkJggg==";
+
+#[test]
+fn a_data_url_decodes_to_image_bytes() {
+    let bytes = decode_data_url(TINY_PNG).expect("URL de données lisible");
+    assert!(bytes.starts_with(b"\x89PNG"), "les octets doivent être ceux d'un PNG");
+}
+
+/// Seules les URL de données d'image sont acceptées : un chemin de fichier ou
+/// une adresse distante n'a pas de sens dans un PDF.
+#[test]
+fn other_urls_are_refused() {
+    for url in [
+        "",
+        "C:/logos/asgard.png",
+        "https://exemple.fr/logo.png",
+        "data:text/plain;base64,Qm9uam91cg==",
+        "data:image/png,pas-du-base64",
+        "data:image/png;base64,???",
+    ] {
+        assert!(decode_data_url(url).is_none(), "{url:?} ne devrait pas être accepté");
+    }
+}
+
+/// Placement repris de la version jsPDF : 24 mm de haut, 60 mm de large au
+/// plus, rapport conservé, centré verticalement dans le bandeau.
+#[test]
+fn the_logo_keeps_its_ratio_within_the_banner() {
+    // Image carrée : la hauteur commande.
+    let (width, height, top) = logo_placement(100, 100);
+    assert_eq!((width, height), (24.0, 24.0));
+    assert_eq!(top, 8.0, "centré dans les 24 mm du bandeau");
+
+    // Image très large : la largeur commande, et le logo se centre.
+    let (width, height, top) = logo_placement(600, 100);
+    assert_eq!(width, 60.0);
+    assert_eq!(height, 10.0);
+    assert_eq!(top, 15.0);
+
+    // Une image dégénérée ne fait pas diviser par zéro.
+    assert_eq!(logo_placement(0, 0), (0.0, 0.0, 8.0));
+}
+
+/// Le logo prend la place du titre, comme dans l'original.
+#[test]
+fn a_logo_replaces_the_application_title() {
+    let with_logo = Issuer { logo: TINY_PNG.into(), ..issuer() };
+
+    let pdf = render(
+        DocumentKind::Invoice,
+        &coffee_invoice(),
+        &coffee_client(),
+        &with_logo,
+        generated_at(),
+    )
+    .unwrap();
+
+    let text = extract_text(&pdf).join(" | ");
+    assert!(!text.contains("ASGARD CRM"), "le titre cède la place au logo : {text}");
+    assert!(!text.contains("Gestion & Facturation"));
+    // Le reste de la pièce ne bouge pas.
+    assert!(text.contains("FACTURE"));
+    assert!(text.contains("FAC-ASGARDCOFF-2026-0003"));
+}
+
+/// Une image illisible ne fait pas échouer l'édition : le titre reparaît,
+/// comme le faisait le `catch` du JavaScript.
+#[test]
+fn an_unreadable_logo_falls_back_to_the_title() {
+    let broken = Issuer {
+        logo: "data:image/png;base64,Qm9uam91cg==".into(),
+        ..issuer()
+    };
+
+    let pdf = render(
+        DocumentKind::Invoice,
+        &coffee_invoice(),
+        &coffee_client(),
+        &broken,
+        generated_at(),
+    )
+    .unwrap();
+
+    let text = extract_text(&pdf).join(" | ");
+    assert!(text.contains("ASGARD CRM"));
 }
 
 #[test]

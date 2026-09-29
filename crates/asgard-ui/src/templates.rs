@@ -21,6 +21,9 @@ pub enum Kind {
     Estimate,
     /// Une relance porte sur une facture : même pièce, autre message.
     Reminder,
+    /// Avoir. Seul l'export PDF l'emprunte : un avoir ne s'envoie pas encore
+    /// par e-mail.
+    Credit,
 }
 
 /// Valeurs substituées dans un gabarit.
@@ -61,6 +64,7 @@ pub fn subject(kind: Kind, number: &str, company: &str) -> String {
         Kind::Invoice => format!("Facture {number} - {company}"),
         Kind::Reminder => format!("Rappel : Facture impayée {number} - {company}"),
         Kind::Estimate => format!("Devis {number} - {company}"),
+        Kind::Credit => format!("Avoir {number} - {company}"),
     }
 }
 
@@ -71,7 +75,9 @@ pub fn pick(kind: Kind, settings: &Settings) -> String {
     let (chosen, fallback) = match kind {
         Kind::Invoice => (&settings.email_template_invoice, defaults.email_template_invoice),
         Kind::Reminder => (&settings.email_template_reminder, defaults.email_template_reminder),
-        Kind::Estimate => (&settings.email_template_estimate, defaults.email_template_estimate),
+        Kind::Estimate | Kind::Credit => {
+            (&settings.email_template_estimate, defaults.email_template_estimate)
+        }
     };
 
     if chosen.trim().is_empty() {
@@ -96,6 +102,8 @@ pub struct Document<'a> {
     pub total: f64,
     /// Date ISO de la pièce.
     pub date: &'a str,
+    /// Échéance ISO, pour les factures qui en portent une.
+    pub due_date: Option<&'a str>,
     /// Raison sociale recopiée sur la pièce à sa création.
     pub company: &'a str,
 }
@@ -111,8 +119,9 @@ pub fn template_data(doc: &Document, client: Option<&Client>, settings: &Setting
         document_number: doc.number.to_string(),
         description: doc.description.to_string(),
         amount_total: format!("{:.2}", doc.total),
-        // Aucune échéance n'est stockée : le jeton reste vide, comme avant.
-        due_date: String::new(),
+        // Le jeton reste vide pour un devis, et pour les factures émises avant
+        // que l'échéance ne soit enregistrée.
+        due_date: doc.due_date.map(crate::format::date).unwrap_or_default(),
         document_date: crate::format::date(doc.date),
         sender_name: settings.contact_name.clone(),
         sender_company: settings.company_name.clone(),
@@ -237,6 +246,7 @@ mod tests {
         description: String,
         total: f64,
         date: String,
+        due_date: Option<String>,
         company: String,
     }
 
@@ -244,6 +254,7 @@ mod tests {
         fn from(value: &serde_json::Value, number_key: &str) -> Self {
             Self {
                 number: text(value, number_key),
+                due_date: value["dueDate"].as_str().map(str::to_string),
                 description: text(value, "description"),
                 total: value["amountTotal"].as_f64().unwrap(),
                 date: text(value, "date"),
@@ -274,6 +285,7 @@ mod tests {
         fn doc(&self) -> Document<'_> {
             Document {
                 number: &self.number,
+                due_date: self.due_date.as_deref(),
                 description: &self.description,
                 total: self.total,
                 date: &self.date,
@@ -316,10 +328,23 @@ mod tests {
         assert_eq!(data.amount_total, "2279.99");
     }
 
+    /// Le jeu de référence est antérieur aux échéances : ses factures n'en
+    /// portent pas, et le jeton reste vide plutôt que d'afficher une date
+    /// inventée.
     #[test]
-    fn data_leaves_the_due_date_empty() {
+    fn data_leaves_an_unknown_due_date_empty() {
         let data = template_data(&Piece::invoice(1).doc(), Some(&client(0)), &standard_settings());
         assert_eq!(data.due_date, "");
+    }
+
+    #[test]
+    fn a_recorded_due_date_fills_the_token() {
+        let mut piece = Piece::invoice(1);
+        piece.due_date = Some("2026-03-07T00:00:00Z".into());
+
+        let data = template_data(&piece.doc(), Some(&client(0)), &standard_settings());
+        assert_eq!(data.due_date, "07/03/2026");
+        assert_eq!(resolve("Échéance : {dueDate}.", &data), "Échéance : 07/03/2026.");
     }
 
     /// Écart assumé avec l'original, qui laissait le nom vide : la raison

@@ -52,7 +52,7 @@ mod tests {
         assert_eq!(to_cents(379.998_000_000_000_05), 38_000);
         assert_eq!(from_cents(to_cents(379.998_000_000_000_05)), 380.00);
 
-        assert_eq!(to_cents(2279.988_000_000_000_3), 227_999);
+        assert_eq!(to_cents(2279.9880000000003), 227_999);
         assert_eq!(to_cents(79.769_25), 7_977);
     }
 

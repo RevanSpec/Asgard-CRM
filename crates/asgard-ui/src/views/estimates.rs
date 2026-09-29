@@ -5,7 +5,7 @@ use leptos::prelude::*;
 
 use super::documents::{self, estimate_status_badge};
 use super::icons;
-use super::modals::{open_email, today_iso};
+use super::modals::{open_email, today_iso, Outgoing};
 use super::widgets::{EmptyState, FilterBar, GoldButton, IconButton, Modal, SelectField, TextArea, TextField};
 use crate::state::{use_app, Pending};
 use crate::templates::Kind;
@@ -183,13 +183,17 @@ fn Row(estimate: Estimate, draft: RwSignal<Option<Draft>>) -> impl IntoView {
                             open_email(
                                 app,
                                 Kind::Estimate,
-                                e.id,
-                                e.estimate_number.clone(),
-                                e.description.clone(),
-                                e.amount_total,
-                                e.date.clone(),
-                                e.client_id,
-                                e.company_name.clone(),
+                                Outgoing {
+                                    id: e.id,
+                                    number: e.estimate_number.clone(),
+                                    description: e.description.clone(),
+                                    total: e.amount_total,
+                                    date: e.date.clone(),
+                                    // Un devis n'a pas d'échéance.
+                                    due_date: None,
+                                    client_id: e.client_id,
+                                    company: e.company_name.clone(),
+                                },
                             );
                         })
                     />
@@ -270,6 +274,8 @@ fn Form(initial: Draft, draft: RwSignal<Option<Draft>>) -> impl IntoView {
             amount_ht: validation::parse_amount(&amount.get()).unwrap_or_default(),
             tva_rate: validation::parse_amount(&tva.get()).unwrap_or_default(),
             date: format!("{}T00:00:00Z", date.get()),
+            // Un devis ne fait pas naître de créance : pas d'échéance.
+            payment_terms_days: None,
             // Un nouveau devis naît toujours en brouillon, comme dans l'original.
             status: Some(if id.is_some() { status.get() } else { "brouillon".into() }),
         };

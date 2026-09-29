@@ -5,9 +5,10 @@ use std::collections::HashSet;
 use asgard_ipc::{DocumentInput, Invoice};
 use leptos::prelude::*;
 
+use super::credits::{self, CreditForm, CreditNotes};
 use super::documents::{self, can_remind, invoice_status_badge, type_badge};
 use super::icons;
-use super::modals::open_email;
+use super::modals::{open_email, Outgoing};
 use super::widgets::{EmptyState, GoldButton, IconButton, Modal, SearchBox, SelectField, TextArea, TextField};
 use crate::state::{use_app, App, Pending, PaymentForm};
 use crate::templates::Kind;
@@ -19,6 +20,7 @@ pub fn invoices() -> impl IntoView {
     let search = RwSignal::new(String::new());
     let selected = RwSignal::new(HashSet::<i64>::new());
     let creating = RwSignal::new(false);
+    let crediting = RwSignal::new(None::<credits::Draft>);
 
     let visible = move || {
         let needle = search.get().to_lowercase();
@@ -126,7 +128,9 @@ pub fn invoices() -> impl IntoView {
                                 {move || {
                                     visible()
                                         .into_iter()
-                                        .map(|invoice| view! { <Row invoice=invoice selected=selected /> })
+                                        .map(|invoice| view! {
+                                            <Row invoice=invoice selected=selected crediting=crediting />
+                                        })
                                         .collect_view()
                                 }}
                             </tbody>
@@ -135,15 +139,29 @@ pub fn invoices() -> impl IntoView {
                 </Show>
             </div>
 
+            <CreditNotes />
+
             <Show when=move || creating.get()>
                 <CreateForm open=creating />
+            </Show>
+
+            <Show when=move || crediting.get().is_some()>
+                {move || {
+                    crediting
+                        .get()
+                        .map(|draft| view! { <CreditForm initial=draft draft=crediting /> })
+                }}
             </Show>
         </div>
     }
 }
 
 #[component]
-fn Row(invoice: Invoice, selected: RwSignal<HashSet<i64>>) -> impl IntoView {
+fn Row(
+    invoice: Invoice,
+    selected: RwSignal<HashSet<i64>>,
+    crediting: RwSignal<Option<credits::Draft>>,
+) -> impl IntoView {
     let app = use_app();
     let id = invoice.id;
     let number = invoice.invoice_number.clone();
@@ -192,6 +210,18 @@ fn Row(invoice: Invoice, selected: RwSignal<HashSet<i64>>) -> impl IntoView {
                                 title="Enregistrer le règlement"
                                 on_click=Callback::new(move |_| {
                                     app.payment.set(Some(PaymentForm { invoice_id: id, number: number.clone() }))
+                                })
+                            />
+                        }
+                    })}
+                    {credits::can_be_credited(&invoice.status).then(|| {
+                        let for_credit = invoice.clone();
+                        view! {
+                            <GoldButton
+                                label="Avoir"
+                                title="Émettre un avoir sur cette facture"
+                                on_click=Callback::new(move |_| {
+                                    crediting.set(Some(credits::Draft::for_invoice(&for_credit)))
                                 })
                             />
                         }
@@ -249,13 +279,16 @@ pub(super) fn email_invoice(app: App, inv: &Invoice, kind: Kind) {
     open_email(
         app,
         kind,
-        inv.id,
-        inv.invoice_number.clone(),
-        inv.description.clone(),
-        inv.amount_total,
-        inv.date.clone(),
-        inv.client_id,
-        inv.company_name.clone(),
+        Outgoing {
+            id: inv.id,
+            number: inv.invoice_number.clone(),
+            description: inv.description.clone(),
+            total: inv.amount_total,
+            date: inv.date.clone(),
+            due_date: inv.due_date.clone(),
+            client_id: inv.client_id,
+            company: inv.company_name.clone(),
+        },
     );
 }
 
@@ -308,6 +341,7 @@ pub(super) fn CreateForm(open: RwSignal<bool>) -> impl IntoView {
             amount_ht: validation::parse_amount(&amount.get()).unwrap_or_default(),
             tva_rate: validation::parse_amount(&tva.get()).unwrap_or_default(),
             date: format!("{}T00:00:00Z", super::modals::today_iso()),
+            payment_terms_days: Some(crate::settings::load().payment_terms_days),
             status: None,
         };
 

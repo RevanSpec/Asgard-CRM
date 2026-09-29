@@ -6,7 +6,13 @@ description = "Génération des factures et devis d'Asgard CRM au format PDF"
 
 [dependencies]
 asgard-core = { path = "../asgard-core" }
-printpdf = "0.7"
+# `embedded_images` apporte le décodage PNG/JPEG : sans lui, printpdf ne sait
+# pas embarquer d'image, et le logo de l'émetteur resterait absent des PDF.
+printpdf = { version = "0.7", features = ["embedded_images"] }
+base64 = "0.22"
+# Même version que celle qu'embarque printpdf : deux versions du crate
+# donneraient deux types `DynamicImage` incompatibles.
+image = { version = "0.24", default-features = false, features = ["png", "jpeg"] }
 serde = { workspace = true }
 
 [dev-dependencies]

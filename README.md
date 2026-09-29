@@ -13,6 +13,8 @@
   - Génération automatique des numéros de pièces réglementaires (`DEV-CLIENT-ANNEE-XXXX` / `FAC-CLIENT-ANNEE-XXXX`).
   - Conversion d'un devis en facture en 1 clic.
   - Gestion du statut de paiement (Brouillon, Envoyé, Payé, En retard).
+  - **Échéance de règlement** calculée au délai que vous fixez, et mentions obligatoires imprimées (pénalités de retard, indemnité de recouvrement de 40 €, escompte).
+  - **Avoirs** : une facture émise ne se modifie pas — elle s'annule ou se corrige par un avoir, partiel ou total, avec sa propre série de numéros (`AVO-CLIENT-ANNEE-XXXX`).
 - 💸 **Gestion des dépenses** : Suivi des frais professionnels avec catégorisation et méthode de paiement.
 - 📐 **Comptabilité & URSSAF** :
   - Registre réglementaire des recettes encaissées.
@@ -23,6 +25,7 @@
 - 💾 **Confidentialité & Sauvegarde** :
   - Base de données locale **SQLite**, montants stockés en centimes. Aucune donnée ne quitte votre machine.
   - Export et import de sauvegardes complètes pour ne jamais perdre vos données.
+  - **Copie automatique** de la base au premier lancement de chaque journée, les sept dernières conservées à côté de la base.
 
 ---
 
@@ -86,7 +89,24 @@
 
 ```bash
 cargo test --workspace        # noyau, PDF, hôte et interface
+cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+Ces commandes tournent sur chaque proposition de modification
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
+**Parcours de l'application.** Les tests unitaires ne voient pas une interface
+qui se fige. Un second script lance l'application, s'attache à sa WebView et
+joue un parcours complet — sept écrans, création d'un client, facturation avec
+virgule décimale, encaissement, envoi par e-mail, conversion d'un devis,
+suppressions — en échouant à la moindre erreur de console :
+
+```bash
+node scripts/smoke.mjs target/release/asgard-crm.exe
+```
+
+> ⚠️ Il écrit dans votre base. Sauvegardez `%APPDATA%/com.asgard.crm` avant de
+> le lancer en local ; en intégration continue, la base part vierge.
 
 ---
 

@@ -69,8 +69,7 @@ const SCHEDULES: &[Schedule] = &[Schedule {
 pub fn for_year(year: i32) -> &'static Schedule {
     SCHEDULES
         .iter()
-        .filter(|schedule| schedule.year <= year)
-        .next_back()
+        .rfind(|schedule| schedule.year <= year)
         .unwrap_or(&SCHEDULES[0])
 }
 

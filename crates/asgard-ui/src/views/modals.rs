@@ -70,18 +70,22 @@ pub fn ConfirmModal() -> impl IntoView {
 ///
 /// Le destinataire vient de la fiche client en mémoire ; s'il a été supprimé,
 /// le champ reste vide et l'utilisateur le saisit.
-#[allow(clippy::too_many_arguments)]
-pub fn open_email(
-    app: App,
-    kind: Kind,
-    id: i64,
-    number: String,
-    description: String,
-    total: f64,
-    date: String,
-    client_id: Option<i64>,
-    company: String,
-) {
+/// Pièce dont on prépare l'envoi, telle que la ligne du tableau la connaît.
+pub struct Outgoing {
+    pub id: i64,
+    pub number: String,
+    pub description: String,
+    pub total: f64,
+    pub date: String,
+    /// Échéance, pour les factures qui en portent une.
+    pub due_date: Option<String>,
+    pub client_id: Option<i64>,
+    /// Raison sociale recopiée sur la pièce, utilisée si le client a disparu.
+    pub company: String,
+}
+
+pub fn open_email(app: App, kind: Kind, doc: Outgoing) {
+    let Outgoing { id, number, description, total, date, due_date, client_id, company } = doc;
     let settings = crate::settings::load();
 
     let client = app.snapshot.get_untracked().and_then(|snapshot| {
@@ -96,6 +100,7 @@ pub fn open_email(
         description: &description,
         total,
         date: &date,
+        due_date: due_date.as_deref(),
         company: &company,
     };
     let draft = templates::compose(kind, &doc, client.as_ref(), &settings);
@@ -208,6 +213,7 @@ fn EmailForm(compose: EmailCompose) -> impl IntoView {
 fn email_title(kind: Kind) -> &'static str {
     match kind {
         Kind::Estimate => "Envoyer le devis par e-mail",
+        Kind::Credit => "Envoyer l'avoir par e-mail",
         Kind::Invoice | Kind::Reminder => "Envoyer la facture par e-mail",
     }
 }

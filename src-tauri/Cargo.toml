@@ -25,6 +25,10 @@ tauri = { version = "2", features = [] }
 # blob:, chemin que la CSP de Tauri rend incertain et qu'on ne pouvait pas
 # tester depuis l'environnement de developpement.
 tauri-plugin-dialog = "2"
+# Journal : sans lui, une panne chez l'utilisateur ne laisse aucune trace, et
+# le diagnostic se résume à des suppositions.
+tauri-plugin-log = "2"
+log = "0.4"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 

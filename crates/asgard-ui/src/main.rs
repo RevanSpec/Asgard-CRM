@@ -27,8 +27,55 @@ fn main() {
     // Sans ce crochet, une panique WebAssembly ne laisse qu'un « unreachable »
     // dans la console, sans pile d'appel ni message.
     console_error_panic_hook::set_once();
+    announce_panics();
     leptos::mount::mount_to_body(Root);
 }
+
+/// Affiche un bandeau quand l'interface panique.
+///
+/// Une panique WebAssembly arrête l'instance : plus aucun bouton ne répond,
+/// mais l'écran reste affiché, intact. Rien ne distingue alors une application
+/// morte d'une application lente — c'est ce qui s'est produit avec le bouton
+/// « Nouvelle Facture », et l'utilisateur n'avait aucun moyen de le savoir.
+///
+/// Le bandeau est posé en DOM brut : après une panique, Leptos ne peut plus
+/// rien redessiner.
+fn announce_panics() {
+    let previous = std::panic::take_hook();
+
+    std::panic::set_hook(Box::new(move |info| {
+        previous(info);
+
+        let Some(document) = web_sys::window().and_then(|w| w.document()) else {
+            return;
+        };
+        // Une seconde panique ne doit pas empiler les bandeaux.
+        if document.get_element_by_id(PANIC_BANNER_ID).is_some() {
+            return;
+        }
+
+        if let Ok(banner) = document.create_element("div") {
+            banner.set_id(PANIC_BANNER_ID);
+            let _ = banner.set_attribute(
+                "style",
+                "position: fixed; inset: 0 0 auto 0; z-index: 9999; padding: 0.9rem 1.25rem; \
+                 background: #EF4444; color: white; font-weight: 600; text-align: center; \
+                 font-family: system-ui, sans-serif",
+            );
+            banner.set_text_content(Some(
+                "Asgard CRM a rencontré une erreur interne et ne répond plus. \
+                 Fermez puis rouvrez l'application — vos données sont intactes.",
+            ));
+
+            if let Some(body) = document.body() {
+                let _ = body.append_child(&banner);
+            }
+        }
+    }));
+}
+
+/// Identifiant du bandeau, pour ne l'afficher qu'une fois.
+const PANIC_BANNER_ID: &str = "asgard-panic-banner";
 
 #[component]
 fn Root() -> impl IntoView {

@@ -25,6 +25,10 @@ pub struct Settings {
     pub siret: String,
     pub iban: String,
 
+    /// Délai de règlement annoncé sur les factures, en jours. L'hôte en déduit
+    /// l'échéance au moment de l'émission, puis ne la change plus.
+    pub payment_terms_days: u32,
+
     pub urssaf_service_bnc: f64,
     pub urssaf_service_bic: f64,
     pub urssaf_vente: f64,
@@ -53,6 +57,8 @@ impl Default for Settings {
             address: "1 Rue du Valhalla, 75008 Paris".into(),
             siret: "839 204 123 00019".into(),
             iban: "FR76 3000 2000 0001 2345 6789 012".into(),
+
+            payment_terms_days: 30,
 
             urssaf_service_bnc: 21.1,
             urssaf_service_bic: 21.1,
