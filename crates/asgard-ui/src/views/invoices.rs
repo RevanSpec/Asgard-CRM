@@ -9,7 +9,7 @@ use super::documents::{self, can_remind, invoice_status_badge, type_badge};
 use super::icons;
 use super::modals::open_email;
 use super::widgets::{EmptyState, GoldButton, IconButton, Modal, SearchBox, SelectField, TextArea, TextField};
-use crate::state::{use_app, Pending, PaymentForm};
+use crate::state::{use_app, App, Pending, PaymentForm};
 use crate::templates::Kind;
 use crate::validation::{self, Field, FieldErrors};
 use crate::{actions, format};
@@ -55,7 +55,7 @@ pub fn invoices() -> impl IntoView {
         !rows.is_empty() && rows.iter().all(|inv| selected.get().contains(&inv.id))
     };
 
-    let open_create = move |_| open_invoice_form(creating);
+    let open_create = move |_| open_invoice_form(app, creating);
 
     view! {
         <div>
@@ -200,13 +200,13 @@ fn Row(invoice: Invoice, selected: RwSignal<HashSet<i64>>) -> impl IntoView {
                         <GoldButton
                             label="Relancer"
                             title="Envoyer un rappel de paiement par e-mail"
-                            on_click=Callback::new(move |_| email_invoice(&for_reminder, Kind::Reminder))
+                            on_click=Callback::new(move |_| email_invoice(app, &for_reminder, Kind::Reminder))
                         />
                     })}
                     <IconButton
                         icon=icons::email
                         title="Envoyer par e-mail"
-                        on_click=Callback::new(move |_| email_invoice(&for_email, Kind::Invoice))
+                        on_click=Callback::new(move |_| email_invoice(app, &for_email, Kind::Invoice))
                     />
                     <IconButton
                         icon=icons::download
@@ -229,8 +229,10 @@ fn Row(invoice: Invoice, selected: RwSignal<HashSet<i64>>) -> impl IntoView {
 
 /// Ouvre la création de facture, s'il existe au moins un client. Partagé avec
 /// le tableau de bord, qui porte le même bouton « Nouvelle Facture ».
-pub(super) fn open_invoice_form(creating: RwSignal<bool>) {
-    let app = use_app();
+///
+/// L'état arrive en argument : appelée depuis un gestionnaire de clic, cette
+/// fonction ne peut pas le lire elle-même (voir `state::use_app`).
+pub(super) fn open_invoice_form(app: App, creating: RwSignal<bool>) {
     let has_clients = app.snapshot.get_untracked().is_some_and(|s| !s.clients.is_empty());
     if has_clients {
         creating.set(true);
@@ -243,8 +245,9 @@ pub(super) fn open_invoice_form(creating: RwSignal<bool>) {
 }
 
 /// Ouvre l'envoi par e-mail d'une facture, ou sa relance.
-pub(super) fn email_invoice(inv: &Invoice, kind: Kind) {
+pub(super) fn email_invoice(app: App, inv: &Invoice, kind: Kind) {
     open_email(
+        app,
         kind,
         inv.id,
         inv.invoice_number.clone(),

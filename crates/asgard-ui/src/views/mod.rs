@@ -34,6 +34,9 @@ use leptos::prelude::*;
 use crate::state::use_app;
 use widgets::Modal;
 
+#[cfg(test)]
+mod context_rule;
+
 /// Fenêtre de message, en remplacement de `customAlert`.
 #[component]
 pub fn NoticeModal() -> impl IntoView {

@@ -181,6 +181,7 @@ fn Row(estimate: Estimate, draft: RwSignal<Option<Draft>>) -> impl IntoView {
                         on_click=Callback::new(move |_| {
                             let e = &for_email;
                             open_email(
+                                app,
                                 Kind::Estimate,
                                 e.id,
                                 e.estimate_number.clone(),

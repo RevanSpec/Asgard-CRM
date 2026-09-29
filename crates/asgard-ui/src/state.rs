@@ -313,6 +313,13 @@ impl App {
 
 /// Récupère l'état depuis le contexte. Panique si la racine ne l'a pas fourni,
 /// ce qui serait une erreur de programmation, pas un cas d'exécution.
+/// Lit l'état partagé depuis le contexte Leptos.
+///
+/// **À appeler pendant le rendu seulement.** Dans un gestionnaire
+/// d'événement, le contexte n'est plus accessible : l'appel panique, et une
+/// panique dans le WebAssembly fige toute l'interface jusqu'au redémarrage de
+/// l'application. Les fonctions déclenchées par un clic reçoivent donc l'état
+/// en argument — `App` est `Copy`, une fermeture peut le capturer.
 pub fn use_app() -> App {
     use_context::<App>().expect("l'état applicatif doit être fourni par la racine")
 }
