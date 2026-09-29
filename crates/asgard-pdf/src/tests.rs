@@ -32,6 +32,7 @@ fn issuer() -> Issuer {
         siret: "839 204 123 00019".into(),
         iban: "FR76 3000 2000 0001 2345 6789 012".into(),
         accent_colour: "#E5A93C".into(),
+        logo: String::new(),
     }
 }
 
@@ -463,6 +464,95 @@ fn a_credit_note_carries_the_cgi_notice_when_exempt() {
 
     let taxed = legal_notice(DocumentKind::CreditNote, dec!(20), "FR76 1234", None);
     assert!(!taxed.contains("293 B"));
+}
+
+/// PNG 2×2 aux couleurs de la marque, produit à la main : le plus petit
+/// fichier qui permette d'éprouver le décodage et le placement.
+const TINY_PNG: &str = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGN4utIGiBggFAA0ygcp9kDWlAAAAABJRU5ErkJggg==";
+
+#[test]
+fn a_data_url_decodes_to_image_bytes() {
+    let bytes = decode_data_url(TINY_PNG).expect("URL de données lisible");
+    assert!(bytes.starts_with(b"\x89PNG"), "les octets doivent être ceux d'un PNG");
+}
+
+/// Seules les URL de données d'image sont acceptées : un chemin de fichier ou
+/// une adresse distante n'a pas de sens dans un PDF.
+#[test]
+fn other_urls_are_refused() {
+    for url in [
+        "",
+        "C:/logos/asgard.png",
+        "https://exemple.fr/logo.png",
+        "data:text/plain;base64,Qm9uam91cg==",
+        "data:image/png,pas-du-base64",
+        "data:image/png;base64,???",
+    ] {
+        assert!(decode_data_url(url).is_none(), "{url:?} ne devrait pas être accepté");
+    }
+}
+
+/// Placement repris de la version jsPDF : 24 mm de haut, 60 mm de large au
+/// plus, rapport conservé, centré verticalement dans le bandeau.
+#[test]
+fn the_logo_keeps_its_ratio_within_the_banner() {
+    // Image carrée : la hauteur commande.
+    let (width, height, top) = logo_placement(100, 100);
+    assert_eq!((width, height), (24.0, 24.0));
+    assert_eq!(top, 8.0, "centré dans les 24 mm du bandeau");
+
+    // Image très large : la largeur commande, et le logo se centre.
+    let (width, height, top) = logo_placement(600, 100);
+    assert_eq!(width, 60.0);
+    assert_eq!(height, 10.0);
+    assert_eq!(top, 15.0);
+
+    // Une image dégénérée ne fait pas diviser par zéro.
+    assert_eq!(logo_placement(0, 0), (0.0, 0.0, 8.0));
+}
+
+/// Le logo prend la place du titre, comme dans l'original.
+#[test]
+fn a_logo_replaces_the_application_title() {
+    let with_logo = Issuer { logo: TINY_PNG.into(), ..issuer() };
+
+    let pdf = render(
+        DocumentKind::Invoice,
+        &coffee_invoice(),
+        &coffee_client(),
+        &with_logo,
+        generated_at(),
+    )
+    .unwrap();
+
+    let text = extract_text(&pdf).join(" | ");
+    assert!(!text.contains("ASGARD CRM"), "le titre cède la place au logo : {text}");
+    assert!(!text.contains("Gestion & Facturation"));
+    // Le reste de la pièce ne bouge pas.
+    assert!(text.contains("FACTURE"));
+    assert!(text.contains("FAC-ASGARDCOFF-2026-0003"));
+}
+
+/// Une image illisible ne fait pas échouer l'édition : le titre reparaît,
+/// comme le faisait le `catch` du JavaScript.
+#[test]
+fn an_unreadable_logo_falls_back_to_the_title() {
+    let broken = Issuer {
+        logo: "data:image/png;base64,Qm9uam91cg==".into(),
+        ..issuer()
+    };
+
+    let pdf = render(
+        DocumentKind::Invoice,
+        &coffee_invoice(),
+        &coffee_client(),
+        &broken,
+        generated_at(),
+    )
+    .unwrap();
+
+    let text = extract_text(&pdf).join(" | ");
+    assert!(text.contains("ASGARD CRM"));
 }
 
 #[test]

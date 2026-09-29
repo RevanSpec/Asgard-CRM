@@ -372,19 +372,66 @@ struct DocumentMessage {
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        // Journal dans le dossier de journaux du système, en plus de la sortie
+        // standard : quand l'utilisateur signale une panne, c'est la seule
+        // trace exploitable.
+        .plugin(
+            tauri_plugin_log::Builder::new()
+                .level(log::LevelFilter::Info)
+                .targets([
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::Stdout),
+                    tauri_plugin_log::Target::new(tauri_plugin_log::TargetKind::LogDir {
+                        file_name: Some("asgard-crm".into()),
+                    }),
+                ])
+                .build(),
+        )
         .setup(|app| {
             let data_dir = app.path().app_data_dir()?;
 
             // L'ouverture est bloquante et doit aboutir avant le premier rendu :
             // sans base, aucune commande de données ne peut répondre.
-            let db = tauri::async_runtime::block_on(async move {
-                let db = db::open(data_dir).await?;
+            let opened = tauri::async_runtime::block_on(async move {
+                let db = db::open(data_dir.clone()).await?;
                 db::seed_demo_data_if_empty(&db.pool).await?;
-                Ok::<_, DbError>(db)
-            })?;
 
-            app.manage(db);
-            Ok(())
+                // Copie du jour, par roulement. Son échec ne doit pas empêcher
+                // d'ouvrir l'application : perdre une copie est ennuyeux, ne
+                // pas pouvoir travailler l'est davantage.
+                let day = chrono::Local::now().format("%Y-%m-%d").to_string();
+                match db::autosave::keep_daily_copy(&db.pool, &data_dir, &day).await {
+                    Ok(Some(path)) => log::info!("Copie du jour écrite : {}", path.display()),
+                    Ok(None) => log::info!("Copie du jour déjà présente"),
+                    Err(error) => log::error!("Copie quotidienne impossible : {error}"),
+                }
+
+                Ok::<_, DbError>(db)
+            });
+
+            match opened {
+                Ok(db) => {
+                    log::info!("Base ouverte, application prête");
+                    app.manage(db);
+                    Ok(())
+                }
+                // Sans cette fenêtre, l'échec est muet : le processus meurt
+                // avant d'afficher quoi que ce soit, et l'utilisateur ne voit
+                // rien — pas même un message d'erreur.
+                Err(error) => {
+                    log::error!("Ouverture de la base impossible : {error}");
+                    app.dialog()
+                        .message(format!(
+                            "{error}\n\nVos données n'ont pas été modifiées. Si le problème \
+                             persiste, une copie récente se trouve dans le dossier « backups » \
+                             à côté de la base."
+                        ))
+                        .title("Asgard CRM — base de données inaccessible")
+                        .kind(tauri_plugin_dialog::MessageDialogKind::Error)
+                        .blocking_show();
+
+                    Err(Box::new(error))
+                }
+            }
         })
         .invoke_handler(tauri::generate_handler![
             test_smtp,

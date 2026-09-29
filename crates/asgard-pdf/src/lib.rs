@@ -114,6 +114,9 @@ pub struct Issuer {
     pub siret: String,
     pub iban: String,
     pub accent_colour: String,
+    /// Logo, tel que les réglages le stockent : une URL de données
+    /// (`data:image/png;base64,…`). Vide quand l'émetteur n'en a pas.
+    pub logo: String,
 }
 
 impl Default for Issuer {
@@ -127,6 +130,7 @@ impl Default for Issuer {
             siret: String::new(),
             iban: String::new(),
             accent_colour: "#E5A93C".into(),
+            logo: String::new(),
         }
     }
 }
@@ -224,6 +228,51 @@ fn type_label(service_type: ServiceType) -> &'static str {
         ServiceType::Vente => "Vente",
         ServiceType::ServiceBnc => "Service",
     }
+}
+
+/// Hauteur maximale du logo dans le bandeau, en millimètres.
+const LOGO_MAX_HEIGHT: f32 = 24.0;
+
+/// Largeur maximale du logo, en millimètres.
+const LOGO_MAX_WIDTH: f32 = 60.0;
+
+/// Décode une URL de données en octets d'image.
+///
+/// Les réglages stockent le logo sous la forme que produit `FileReader` :
+/// `data:image/png;base64,iVBOR…`. Rien d'autre n'est accepté — un chemin de
+/// fichier ou une URL distante n'aurait pas de sens dans un PDF.
+pub fn decode_data_url(url: &str) -> Option<Vec<u8>> {
+    use base64::Engine;
+
+    let rest = url.strip_prefix("data:")?;
+    let (mime, data) = rest.split_once(",")?;
+    if !mime.starts_with("image/") || !mime.ends_with(";base64") {
+        return None;
+    }
+
+    base64::engine::general_purpose::STANDARD.decode(data).ok()
+}
+
+/// Taille d'affichage du logo, en millimètres, et sa position verticale.
+///
+/// Reprend le calcul de la version jsPDF : hauteur de 24 mm, réduite si la
+/// largeur dépasse 60 mm, et centrage vertical dans le bandeau.
+pub fn logo_placement(pixels_wide: u32, pixels_high: u32) -> (f32, f32, f32) {
+    if pixels_wide == 0 || pixels_high == 0 {
+        return (0.0, 0.0, 8.0);
+    }
+
+    let ratio = pixels_wide as f32 / pixels_high as f32;
+    let mut height = LOGO_MAX_HEIGHT;
+    let mut width = ratio * height;
+
+    if width > LOGO_MAX_WIDTH {
+        width = LOGO_MAX_WIDTH;
+        height = width / ratio;
+    }
+
+    let top = 8.0 + (LOGO_MAX_HEIGHT - height) / 2.0;
+    (width, height, top)
 }
 
 /// Conditions de retard, obligatoires sur une facture entre professionnels.
@@ -338,16 +387,47 @@ pub fn render(
 
     // 1. Bandeau de tête
     canvas.filled_rect(0.0, 0.0, PAGE_WIDTH, 40.0, NAVY);
-    canvas.text("ASGARD CRM", 22.0, 20.0, 25.0, Align::Left, true, accent);
-    canvas.text(
-        "Gestion & Facturation Auto-Entreprise",
-        9.0,
-        20.0,
-        32.0,
-        Align::Left,
-        false,
-        WHITE,
-    );
+
+    // Le logo prend la place du titre. Une image illisible ne fait pas échouer
+    // l'édition : le titre reparaît, comme le faisait le `catch` du JavaScript.
+    let logo = decode_data_url(&issuer.logo)
+        .and_then(|bytes| ::image::load_from_memory(&bytes).ok());
+
+    if let Some(picture) = logo {
+        use ::image::GenericImageView;
+        let (pixels_wide, pixels_high) = picture.dimensions();
+        let (width, height, top) = logo_placement(pixels_wide, pixels_high);
+
+        // printpdf place l'image par son coin inférieur gauche, à 300 ppp par
+        // défaut : l'échelle ramène ses pixels aux millimètres voulus.
+        let scale = |target_mm: f32, pixels: u32| {
+            let natural_pt = pixels as f32 * 72.0 / 300.0;
+            (target_mm * 72.0 / 25.4) / natural_pt
+        };
+
+        printpdf::Image::from_dynamic_image(&picture).add_to_layer(
+            doc.get_page(page).get_layer(layer),
+            printpdf::ImageTransform {
+                translate_x: Some(Mm(20.0)),
+                translate_y: Some(layout::flip(top + height)),
+                scale_x: Some(scale(width, pixels_wide)),
+                scale_y: Some(scale(height, pixels_high)),
+                ..Default::default()
+            },
+        );
+    } else {
+        canvas.text("ASGARD CRM", 22.0, 20.0, 25.0, Align::Left, true, accent);
+        canvas.text(
+            "Gestion & Facturation Auto-Entreprise",
+            9.0,
+            20.0,
+            32.0,
+            Align::Left,
+            false,
+            WHITE,
+        );
+    }
+
     canvas.text(kind.banner(), 20.0, PAGE_WIDTH - 20.0, 27.0, Align::Right, true, WHITE);
 
     // 2. Blocs émetteur et destinataire

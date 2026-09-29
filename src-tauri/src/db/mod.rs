@@ -11,11 +11,12 @@
 //! - **une numérotation transactionnelle** protégée par une contrainte
 //!   d'unicité (défaut D3).
 
+pub mod autosave;
 pub mod backup;
 pub mod money;
 pub mod numbering;
 pub mod repo;
-mod seed;
+pub(crate) mod seed;
 
 use std::path::PathBuf;
 

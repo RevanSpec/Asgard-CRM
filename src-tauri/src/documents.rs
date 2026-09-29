@@ -42,6 +42,8 @@ pub struct IssuerInput {
     pub iban: String,
     #[serde(default)]
     pub custom_color: String,
+    #[serde(default)]
+    pub logo_base64: String,
 }
 
 impl From<IssuerInput> for Issuer {
@@ -64,6 +66,7 @@ impl From<IssuerInput> for Issuer {
             siret: input.siret,
             iban: input.iban,
             accent_colour: or_default(input.custom_color, default.accent_colour),
+            logo: input.logo_base64,
         }
     }
 }
@@ -245,6 +248,21 @@ mod tests {
         assert_eq!(issuer.company_name, "Mon Auto-Entreprise");
         assert_eq!(issuer.accent_colour, "#E5A93C");
         assert_eq!(issuer.siret, "123");
+    }
+
+    /// Le logo traverse la frontière : c'est ce qui manquait depuis la phase 4,
+    /// où le générateur Rust ignorait purement et simplement le réglage.
+    #[test]
+    fn the_issuer_carries_its_logo() {
+        let input: IssuerInput =
+            serde_json::from_str(r#"{"logoBase64": "data:image/png;base64,iVBOR"}"#).unwrap();
+        let issuer: Issuer = input.into();
+
+        assert_eq!(issuer.logo, "data:image/png;base64,iVBOR");
+
+        // Sans réglage, pas de logo — et pas d'erreur non plus.
+        let empty: IssuerInput = serde_json::from_str("{}").unwrap();
+        assert!(Issuer::from(empty).logo.is_empty());
     }
 
     #[test]

@@ -366,12 +366,6 @@ fn Branding(fields: Fields) -> impl IntoView {
                     <span class="metric-subtext">
                         "Recommandé : PNG transparent, format paysage (hauteur max 60px)."
                     </span>
-                    // Régression connue depuis la phase 4 : le générateur Rust
-                    // n'imprime pas encore le logo. Mieux vaut le dire que
-                    // laisser croire qu'il figure sur les factures.
-                    <span class="metric-subtext" style="display: block; margin-top: 0.4rem">
-                        "⚠️ Le logo n'apparaît pas encore sur les PDF depuis le passage du générateur en Rust."
-                    </span>
                 </div>
             </div>
         </div>
@@ -591,6 +585,12 @@ fn Backup() -> impl IntoView {
             <div class="settings-section-title">"Sécurité & Sauvegarde des données"</div>
             <p class="metric-subtext" style="margin-bottom: 1.25rem; line-height: 1.5">
                 "Vos données sont stockées localement dans votre base de données locale. Exportez régulièrement des sauvegardes pour éviter toute perte de données en cas de panne de votre ordinateur."
+            </p>
+            // Les copies quotidiennes protègent d'un fichier abîmé, pas d'un
+            // disque perdu : elles vivent à côté de la base. Le dire évite de
+            // s'en croire dispensé d'exporter.
+            <p class="metric-subtext" style="margin-bottom: 1.25rem; line-height: 1.5">
+                "📦 Une copie de la base est prise automatiquement à chaque premier lancement de la journée, et les sept dernières sont conservées dans le dossier « backups », à côté de la base. Elles protègent d'un fichier abîmé — pas d'un disque perdu : pour cela, exportez ailleurs."
             </p>
             <div style="display: flex; gap: 1rem">
                 <button type="button" class="btn btn-primary" on:click=export>
