@@ -195,7 +195,14 @@ change sans exception déclarée doit rester un échec.
 manque en base. L'émission du format lui-même reste hors périmètre, mais elle ne
 demandera plus de migration de données ni de ressaisie client.
 
-### Lot C — Finition visible *(0,5 j)* — D16, D18
+### Lot C — Finition visible *(0,5 j)* — D16, D18 ✅ **livré**
+
+> **Livré.** Inter et Outfit vivent dans `crates/asgard-ui/assets/fonts`,
+> sous-ensembles latins seulement (~180 ko), avec le texte de leur licence OFL.
+> `scripts/fetch-fonts.mjs` les récupère et produit `style/fonts.css` ; l'import
+> distant a disparu. Le parcours vérifie que les deux faces sont chargées et
+> qu'aucune requête ne sort de la machine, et sa liste de messages tolérés est
+> désormais vide. `.oxlintrc.json` est supprimé.
 
 1. Récupérer Inter et Outfit en `woff2` dans `crates/asgard-ui/assets/fonts/`,
    les déclarer en `@font-face` local, supprimer l'`@import` distant. Trunk copie

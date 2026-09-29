@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Asgard CRM</title>
 
+    <!-- Polices embarquées. `index.css` les importait depuis Google Fonts, que
+         la politique de sécurité de contenu bloque : l'application s'affichait
+         avec les polices du système. Elles sont désormais sur le disque, et
+         l'application ne fait plus aucune requête réseau au démarrage. -->
+    <link data-trunk rel="copy-dir" href="assets/fonts" data-target-path="fonts" />
+    <link data-trunk rel="css" href="style/fonts.css" />
+
     <!-- Thème repris tel quel de la version React : le rendu ne devait pas
          dériver, et refaire un design qui convenait n'aurait eu aucun sens. -->
     <link data-trunk rel="css" href="style/index.css" />

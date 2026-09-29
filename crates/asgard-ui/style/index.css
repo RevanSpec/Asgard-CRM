@@ -1,4 +1,5 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap');
+/* Les polices sont déclarées dans `fonts.css` et servies depuis le disque :
+   l'import distant qui figurait ici n'a jamais abouti, la CSP le bloquant. */
 
 :root {
   --bg-primary: #080B11;
