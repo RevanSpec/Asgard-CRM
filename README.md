@@ -8,7 +8,7 @@
 
 - 📊 **Tableau de bord dynamique** : Suivi en temps réel de votre chiffre d'affaires, statistiques mensuelles/annuelles, graphiques d'évolution et santé financière globale.
 - 🚀 **Premier lancement guidé** : L'application demande les informations qui figurent sur vos factures — raison sociale, adresse, SIRET, IBAN — et refuse d'éditer une pièce tant qu'elles manquent, plutôt que d'imprimer une identité qui n'est pas la vôtre. Le jeu de données d'exemple est proposé, jamais imposé.
-- 👥 **Gestion des clients** : Fiches clients (coordonnées, historique d'affaires) pour un suivi optimal.
+- 👥 **Gestion des clients** : Fiches clients (coordonnées, SIREN, numéro de TVA, adresse de livraison, historique d'affaires) pour un suivi optimal.
 - 📄 **Devis & Factures** :
   - Création et édition intuitive de devis et factures.
   - Génération automatique des numéros de pièces réglementaires (`DEV-CLIENT-ANNEE-XXXX` / `FAC-CLIENT-ANNEE-XXXX`).
@@ -16,6 +16,8 @@
   - Gestion du statut de paiement (Brouillon, Envoyé, Payé, En retard).
   - **Échéance de règlement** calculée au délai que vous fixez, et mentions obligatoires imprimées (pénalités de retard, indemnité de recouvrement de 40 €, escompte).
   - **Avoirs** : une facture émise ne se modifie pas — elle s'annule ou se corrige par un avoir, partiel ou total, avec sa propre série de numéros (`AVO-CLIENT-ANNEE-XXXX`).
+  - **Mentions de la facturation électronique** : SIREN du client, nature de l'opération (biens, services ou les deux), adresse de livraison si elle diffère, option pour le paiement de la TVA d'après les débits. Elles sont saisies et imprimées dès aujourd'hui, pour que le passage au format Factur-X ne demande aucune ressaisie.
+  - **Mentions selon l'activité** : médiateur de la consommation et assurance professionnelle, imprimés seulement si vous les renseignez.
 - 💸 **Gestion des dépenses** : Suivi des frais professionnels avec catégorisation et méthode de paiement.
 - 📐 **Comptabilité & URSSAF** :
   - Registre réglementaire des recettes encaissées.

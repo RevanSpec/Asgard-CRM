@@ -159,7 +159,14 @@ réglages.
 contenu du fichier. `.gitattributes` fixe déjà `*.sql` en fins de ligne LF —
 ne pas y toucher.
 
-### Lot B — Conformité de la facture *(2-3 j)* — D14, D15
+### Lot B — Conformité de la facture *(2-3 j)* — D14, D15 ✅ **livré**
+
+> **Livré.** Migration `0005_client_identifiers` : la fiche client porte SIREN,
+> numéro de TVA et adresse de livraison ; les factures et devis portent la nature
+> de l'opération, proposée d'après le type d'activité et modifiable. Le PDF
+> imprime les quatre mentions du décret, et deux champs de réglages — médiateur,
+> assurance — s'impriment s'ils sont remplis. Le README annonçait un SIRET client
+> qui n'existait pas : il est désormais exact.
 
 L'objectif : **saisir et stocker dès maintenant tout ce que la facturation
 électronique exigera**, pour n'avoir plus qu'un format à produire le jour venu.

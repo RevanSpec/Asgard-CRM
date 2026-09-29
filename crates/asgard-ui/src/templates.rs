@@ -236,6 +236,9 @@ mod tests {
             email: text(c, "email"),
             phone: text(c, "phone"),
             address: text(c, "address"),
+            siren: String::new(),
+            vat_number: String::new(),
+            delivery_address: String::new(),
             created_at: text(c, "createdAt"),
         }
     }

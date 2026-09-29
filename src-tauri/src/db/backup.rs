@@ -145,8 +145,9 @@ pub async fn import(pool: &SqlitePool, backup: LegacyBackup) -> Result<ImportRep
         let Some(id) = i(client, "id") else { continue };
 
         sqlx::query(
-            "INSERT INTO clients (id, company_name, contact_name, email, phone, address, created_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+            "INSERT INTO clients (id, company_name, contact_name, email, phone, address,
+                siren, vat_number, delivery_address, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         )
         .bind(id)
         .bind(s(client, "companyName"))
@@ -154,6 +155,9 @@ pub async fn import(pool: &SqlitePool, backup: LegacyBackup) -> Result<ImportRep
         .bind(s(client, "email"))
         .bind(s(client, "phone"))
         .bind(s(client, "address"))
+        .bind(s(client, "siren"))
+        .bind(s(client, "vatNumber"))
+        .bind(s(client, "deliveryAddress"))
         .bind(opt_s(client, "createdAt").unwrap_or_else(|| chrono::Utc::now().to_rfc3339()))
         .execute(&mut *tx)
         .await?;
@@ -178,8 +182,9 @@ pub async fn import(pool: &SqlitePool, backup: LegacyBackup) -> Result<ImportRep
         let inserted = sqlx::query(
             "INSERT OR IGNORE INTO invoices (id, client_id, company_name, invoice_number,
                 service_type, description, amount_ht_cents, tva_rate, amount_tva_cents,
-                amount_total_cents, date, status, payment_date, payment_method)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+                amount_total_cents, date, status, payment_date, payment_method,
+                due_date, operation_kind)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16)",
         )
         .bind(i(invoice, "id"))
         .bind(i(invoice, "clientId"))
@@ -195,6 +200,11 @@ pub async fn import(pool: &SqlitePool, backup: LegacyBackup) -> Result<ImportRep
         .bind(opt_s(invoice, "status").unwrap_or_else(|| "brouillon".into()))
         .bind(opt_s(invoice, "paymentDate"))
         .bind(opt_s(invoice, "paymentMethod"))
+        // Une sauvegarde d'avant ces colonnes n'en porte pas : la pièce revient
+        // sans échéance ni nature, comme elle était partie, plutôt qu'avec des
+        // valeurs inventées à la reprise.
+        .bind(opt_s(invoice, "dueDate"))
+        .bind(opt_s(invoice, "operationKind"))
         .execute(&mut *tx)
         .await?;
 
@@ -224,8 +234,8 @@ pub async fn import(pool: &SqlitePool, backup: LegacyBackup) -> Result<ImportRep
         let inserted = sqlx::query(
             "INSERT OR IGNORE INTO estimates (id, client_id, company_name, estimate_number,
                 service_type, description, amount_ht_cents, tva_rate, amount_tva_cents,
-                amount_total_cents, date, status)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                amount_total_cents, date, status, operation_kind)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
         )
         .bind(i(estimate, "id"))
         .bind(i(estimate, "clientId"))
@@ -239,6 +249,7 @@ pub async fn import(pool: &SqlitePool, backup: LegacyBackup) -> Result<ImportRep
         .bind(to_cents(f(estimate, "amountTotal")))
         .bind(s(estimate, "date"))
         .bind(opt_s(estimate, "status").unwrap_or_else(|| "brouillon".into()))
+        .bind(opt_s(estimate, "operationKind"))
         .execute(&mut *tx)
         .await?;
 
@@ -332,6 +343,72 @@ mod tests {
 
     fn backup(json: serde_json::Value) -> LegacyBackup {
         serde_json::from_value(json).unwrap()
+    }
+
+
+    /// Une sauvegarde exportée puis reprise doit rendre ce qu'elle a emporté.
+    ///
+    /// L'exportation sérialise les pièces entières, mais la reprise ne relisait
+    /// que les colonnes connues d'avant : l'échéance disparaissait au retour, et
+    /// les identifiants du client auraient suivi le même chemin.
+    #[tokio::test]
+    async fn an_exported_backup_comes_back_whole() {
+        let pool = fresh_pool().await;
+
+        super::super::repo::save_client(
+            &pool,
+            asgard_ipc::ClientInput {
+                id: None,
+                company_name: "Asgard Coffee & Co".into(),
+                contact_name: "Valkyrie".into(),
+                email: "valk@coffee.asgard".into(),
+                phone: "06 55 55 55 55".into(),
+                address: "45 rue du Bifrost, 75011 Paris".into(),
+                siren: "552 100 554".into(),
+                vat_number: "FR 12 552100554".into(),
+                delivery_address: "7 quai de Nidavellir, 29200 Brest".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        super::super::repo::create_invoice(
+            &pool,
+            asgard_ipc::DocumentInput {
+                id: None,
+                client_id: 1,
+                company_name: "Asgard Coffee & Co".into(),
+                service_type: "vente".into(),
+                description: "Grains de café".into(),
+                amount_ht: 1000.0,
+                tva_rate: 20.0,
+                date: "2026-04-18T10:00:00Z".into(),
+                payment_terms_days: Some(45),
+                operation_kind: Some("mixte".into()),
+                status: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        let exported = export(&pool).await.unwrap();
+
+        // Reprise dans une base neuve : c'est le cas réel, un ordinateur perdu.
+        let restored = fresh_pool().await;
+        import(&restored, backup(exported)).await.unwrap();
+
+        let client = super::super::repo::list_clients(&restored).await.unwrap().remove(0);
+        assert_eq!(client.siren, "552 100 554");
+        assert_eq!(client.vat_number, "FR 12 552100554");
+        assert_eq!(client.delivery_address, "7 quai de Nidavellir, 29200 Brest");
+
+        let invoice = super::super::repo::list_invoices(&restored).await.unwrap().remove(0);
+        assert_eq!(invoice.operation_kind.as_deref(), Some("mixte"));
+        assert_eq!(
+            invoice.due_date.as_deref(),
+            Some("2026-06-02"),
+            "l'échéance de la facture reprise doit être celle qu'elle portait"
+        );
     }
 
     #[tokio::test]

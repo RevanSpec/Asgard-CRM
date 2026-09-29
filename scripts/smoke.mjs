@@ -393,6 +393,7 @@ for (const [tab, heading] of SCREENS) {
 }
 
 const CLIENT = 'Gjallarhorn SARL';
+const SIREN = '552 100 554';
 
 await step('créer un client', async () => {
   await goto('Clients');
@@ -403,6 +404,9 @@ await step('créer un client', async () => {
   await ev(`__t.fill('Email', 'heimdall@gjallarhorn.as')`);
   await ev(`__t.fill('Numéro de téléphone', '0611aa22b33.44')`);
   await ev(`__t.fill("Adresse de l'entreprise", '1 rue du Pont')`);
+  // Mentions que la facturation électronique rendra obligatoires.
+  await ev(`__t.fill('SIREN', ${JSON.stringify(SIREN)})`);
+  await ev(`__t.fill('Adresse de livraison', '7 quai de Nidavellir, 29200 Brest')`);
   await ev(`__t.click('.modal-footer .btn-primary', 'Ajouter')`);
   await until(`__t.modal() === null`, 'fermeture de la fenêtre');
   await until(`__t.rows().some(r => r.includes(${JSON.stringify(CLIENT)}))`, 'client ajouté au tableau');
@@ -434,6 +438,9 @@ await step('refuser une saisie invalide', async () => {
 await step('modifier un client', async () => {
   await ev(`__t.clickInRow(${JSON.stringify(CLIENT)}, 'Modifier')`);
   await until(`__t.modal()?.includes('Modifier le client')`, 'fenêtre de modification');
+  // Le SIREN revient de la base : la colonne existe, et la fiche la relit.
+  const siren = await ev(`__t.value('SIREN')`);
+  if (siren !== SIREN) throw new Error(`SIREN non conservé : « ${siren} »`);
   await ev(`__t.fill('Nom du contact', 'Heimdall Veilleur')`);
   await ev(`__t.click('.modal-footer .btn-primary', 'Modifier')`);
   await until(`__t.modal() === null`, 'fermeture');
@@ -450,6 +457,11 @@ await step('facturer un montant à virgule décimale', async () => {
   const client = await ev(`__t.optionContaining('Client facturé', ${JSON.stringify(CLIENT)})`);
   if (!client) throw new Error('client absent de la liste déroulante');
   await ev(`__t.fill('Client facturé', ${JSON.stringify(client)})`);
+  // La nature proposée suit le type d'activité, et reste modifiable : le cas
+  // mixte ne se déduit d'aucun type.
+  const proposed = await ev(`__t.value("Nature de l'opération")`);
+  if (proposed !== 'services') throw new Error(`nature proposée : « ${proposed} »`);
+  await ev(`__t.fill("Nature de l'opération", 'mixte')`);
   await ev(`__t.fill('Montant Hors Taxes (HT) en €', '1899,99')`);
   await ev(`__t.fill('Description de la prestation', 'Veille du pont')`);
   await wait(400);
@@ -565,6 +577,24 @@ await step('les cotisations suivent le réglage ACRE', async () => {
   if (full === reduced) throw new Error(`les cotisations n'ont pas bougé : ${full}`);
   if (full !== restored) throw new Error(`valeur non rétablie : ${full} puis ${restored}`);
   return `${full} → ${reduced} → ${full}`;
+});
+
+// Les mentions qui dépendent de l'activité sont enregistrées comme le reste des
+// réglages, donc en base depuis le lot A : elles doivent revenir après un
+// passage par un autre écran.
+await step("les mentions d'activité sont conservées", async () => {
+  const MEDIATOR = 'Médiation Nord, mediation-nord.fr';
+  await goto('Paramètres');
+  await ev(`__t.fill('Médiateur de la consommation', ${JSON.stringify(MEDIATOR)})`);
+  await wait(600);
+  await goto('Dashboard');
+  await goto('Paramètres');
+  const kept = await ev(`__t.value('Médiateur de la consommation')`);
+  if (kept !== MEDIATOR) throw new Error(`mention perdue : « ${kept} »`);
+  // Ne rien laisser derrière soi : la mention est fausse pour cet utilisateur.
+  await ev(`__t.fill('Médiateur de la consommation', '')`);
+  await wait(600);
+  return kept;
 });
 
 // L'autre moitié du garde : l'hôte refuse d'éditer une pièce dont l'émetteur est

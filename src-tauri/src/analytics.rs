@@ -201,6 +201,9 @@ mod tests {
                 email: String::new(),
                 phone: String::new(),
                 address: String::new(),
+                siren: String::new(),
+                vat_number: String::new(),
+                delivery_address: String::new(),
             },
         )
         .await
@@ -218,6 +221,7 @@ mod tests {
                 tva_rate: 20.0,
                 date: "2026-04-18T10:00:00Z".into(),
                 payment_terms_days: None,
+                operation_kind: None,
                 status: Some("payee".into()),
             },
         )

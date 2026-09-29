@@ -14,7 +14,7 @@
 //! phase 1. C'est désormais une écriture de fichier côté Rust, après le
 //! sélecteur du système.
 
-use asgard_core::model::{CivilDate, ServiceType};
+use asgard_core::model::{CivilDate, Operation, ServiceType};
 use asgard_core::money::from_cents;
 use asgard_pdf::{Document, DocumentKind, Issuer, Party};
 use serde::Deserialize;
@@ -44,6 +44,15 @@ pub struct IssuerInput {
     pub custom_color: String,
     #[serde(default)]
     pub logo_base64: String,
+    /// Médiateur de la consommation (art. L616-1 du code de la consommation).
+    #[serde(default)]
+    pub mediator: String,
+    /// Assurance professionnelle (art. L112-11 du code des assurances).
+    #[serde(default)]
+    pub insurance: String,
+    /// Option pour le paiement de la TVA d'après les débits.
+    #[serde(default)]
+    pub vat_on_debits: bool,
 }
 
 impl From<IssuerInput> for Issuer {
@@ -74,6 +83,9 @@ impl From<IssuerInput> for Issuer {
                 colour.to_string()
             },
             logo: input.logo_base64,
+            mediator: input.mediator,
+            insurance: input.insurance,
+            vat_on_debits: input.vat_on_debits,
         }
     }
 }
@@ -146,7 +158,8 @@ pub struct Rendered {
 async fn load(pool: &SqlitePool, kind: Kind, id: i64) -> Result<(Document, Party), DbError> {
     let (corrects_column, corrects_join) = kind.corrected_invoice();
     let row = sqlx::query(&format!(
-        "SELECT d.*, c.contact_name, c.address, c.phone, c.email{corrects_column}
+        "SELECT d.*, c.contact_name, c.address, c.phone, c.email,
+                c.siren, c.vat_number, c.delivery_address{corrects_column}
          FROM {table} d LEFT JOIN clients c ON c.id = d.client_id {corrects_join}
          WHERE d.id = ?1 AND d.deleted_at IS NULL",
         table = kind.table()
@@ -175,6 +188,13 @@ async fn load(pool: &SqlitePool, kind: Kind, id: i64) -> Result<(Document, Party
             .flatten()
             .and_then(|iso| CivilDate::parse(&iso)),
         corrects: row.try_get::<Option<String>, _>("corrects").ok().flatten(),
+        // Les avoirs n'ont pas de colonne de nature : ils reprennent le type
+        // d'activité de la facture corrigée, dont le PDF déduit la mention.
+        operation: row
+            .try_get::<Option<String>, _>("operation_kind")
+            .ok()
+            .flatten()
+            .and_then(|stored| Operation::parse(&stored)),
     };
 
     let client = Party {
@@ -185,6 +205,11 @@ async fn load(pool: &SqlitePool, kind: Kind, id: i64) -> Result<(Document, Party
         address: row.get::<Option<String>, _>("address").unwrap_or_else(|| "N/A".into()),
         phone: row.get::<Option<String>, _>("phone").unwrap_or_else(|| "N/A".into()),
         email: row.get::<Option<String>, _>("email").unwrap_or_else(|| "N/A".into()),
+        // Un client supprimé ne laisse pas d'identifiants : mieux vaut ne rien
+        // imprimer qu'un « N/A » à la place d'un SIREN.
+        siren: row.get::<Option<String>, _>("siren").unwrap_or_default(),
+        vat_number: row.get::<Option<String>, _>("vat_number").unwrap_or_default(),
+        delivery_address: row.get::<Option<String>, _>("delivery_address").unwrap_or_default(),
     };
 
     Ok((document, client))

@@ -21,6 +21,17 @@ pub struct Client {
     pub email: String,
     pub phone: String,
     pub address: String,
+    /// SIREN du client. Mention obligatoire des factures entre professionnels
+    /// avec la facturation électronique (décret n° 2022-1299).
+    #[serde(default)]
+    pub siren: String,
+    /// Numéro de TVA intracommunautaire, quand le client en a un.
+    #[serde(default)]
+    pub vat_number: String,
+    /// Adresse de livraison, à mentionner lorsqu'elle diffère de l'adresse de
+    /// facturation.
+    #[serde(default)]
+    pub delivery_address: String,
     pub created_at: String,
 }
 
@@ -39,6 +50,12 @@ pub struct ClientInput {
     pub phone: String,
     #[serde(default)]
     pub address: String,
+    #[serde(default)]
+    pub siren: String,
+    #[serde(default)]
+    pub vat_number: String,
+    #[serde(default)]
+    pub delivery_address: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -64,6 +81,11 @@ pub struct Invoice {
     pub payment_date: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payment_method: Option<String>,
+    /// Nature de l'opération : « biens », « services » ou « mixte ». Absente
+    /// des pièces émises avant qu'elle ne soit demandée ; le PDF la déduit
+    /// alors du type d'activité.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -81,6 +103,11 @@ pub struct Estimate {
     pub amount_total: f64,
     pub date: String,
     pub status: String,
+    /// Nature de l'opération : « biens », « services » ou « mixte ». Absente
+    /// des pièces émises avant qu'elle ne soit demandée ; le PDF la déduit
+    /// alors du type d'activité.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_kind: Option<String>,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -117,6 +144,10 @@ pub struct DocumentInput {
     /// déduit l'échéance et l'enregistre : une facture émise ne bouge plus.
     #[serde(default)]
     pub payment_terms_days: Option<u32>,
+    /// Nature de l'opération, telle que le formulaire la propose : elle part du
+    /// type d'activité et reste modifiable, le cas mixte ne se devinant pas.
+    #[serde(default)]
+    pub operation_kind: Option<String>,
     #[serde(default)]
     pub status: Option<String>,
 }
