@@ -4,10 +4,10 @@
   "version": "0.1.0",
   "identifier": "com.asgard.crm",
   "build": {
-    "beforeDevCommand": "npm run dev:vite",
-    "devUrl": "http://localhost:5173",
-    "beforeBuildCommand": "npm run build",
-    "frontendDist": "../dist"
+    "beforeDevCommand": "trunk serve --config crates/asgard-ui/Trunk.toml",
+    "devUrl": "http://localhost:5174",
+    "beforeBuildCommand": "trunk build --release --config crates/asgard-ui/Trunk.toml",
+    "frontendDist": "../crates/asgard-ui/dist"
   },
   "app": {
     "windows": [
@@ -22,7 +22,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; img-src 'self' data: blob:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self' ipc: http://ipc.localhost"
     }
   },
   "bundle": {

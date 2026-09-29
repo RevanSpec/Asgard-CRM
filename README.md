@@ -1,6 +1,6 @@
 # Asgard CRM 🛡️
 
-**Asgard CRM** est une application de bureau légère, moderne et performante conçue spécifiquement pour les micro-entrepreneurs et auto-entrepreneurs français. Construite avec **React**, **Vite** et **Tauri**, elle permet de gérer l'intégralité de votre activité commerciale et comptable en local, garantissant une confidentialité totale de vos données.
+**Asgard CRM** est une application de bureau légère, moderne et performante conçue spécifiquement pour les micro-entrepreneurs et auto-entrepreneurs français. Écrite en **Rust** de bout en bout — hôte **Tauri**, interface **Leptos** compilée en WebAssembly — elle permet de gérer l'intégralité de votre activité commerciale et comptable en local, garantissant une confidentialité totale de vos données.
 
 ---
 
@@ -21,7 +21,7 @@
   - Suivi des seuils de franchise de TVA et des plafonds de chiffre d'affaires micro-entreprise avec alertes visuelles.
 - ✉️ **Envoi d'e-mails & SMTP** : Exportez et envoyez directement vos factures et devis en PDF à vos clients depuis l'application (support de Proton Mail Bridge et des serveurs SMTP standards).
 - 💾 **Confidentialité & Sauvegarde** :
-  - Base de données locale intégrée avec **Dexie.js** (IndexedDB). Aucune donnée ne quitte votre machine.
+  - Base de données locale **SQLite**, montants stockés en centimes. Aucune donnée ne quitte votre machine.
   - Export et import de sauvegardes complètes pour ne jamais perdre vos données.
 
 ---
@@ -29,17 +29,17 @@
 ## 🛠️ Stack Technique
 
 * **Framework de bureau** : [Tauri 2](https://tauri.app/) (hôte Rust, webview du système)
-* **Frontend** : [React](https://react.dev/) + [Vite](https://vite.dev/)
-* **Base de données** : [Dexie.js](https://dexie.org/) (IndexedDB wrapper)
+* **Interface** : [Leptos](https://leptos.dev/) compilé en WebAssembly avec [trunk](https://trunkrs.dev/)
+* **Noyau métier** : crate `asgard-core` (cotisations URSSAF, seuils, agrégats), partagé par l'hôte et l'interface
+* **Base de données** : SQLite via [sqlx](https://github.com/launchbadge/sqlx)
 * **Design** : Interface responsive moderne avec thème sombre *glassmorphism* haut de gamme.
 * **Génération PDF** : [printpdf](https://github.com/fschutt/printpdf) (côté Rust)
 * **Envoi d'emails** : [lettre](https://lettre.rs/) (commande Tauri, côté Rust)
 * **Secrets** : trousseau du système d'exploitation via [keyring](https://crates.io/crates/keyring)
-* **Linter** : [Oxlint](https://oxc.rs/docs/guide/usage/linter.html) (ultra rapide)
-* **Tests** : [Vitest](https://vitest.dev/) pour la logique métier, `cargo test` pour l'hôte
+* **Tests** : `cargo test`, pour l'ensemble de l'espace de travail
 
-> 🦀 Le projet migre progressivement vers Rust — voir [`docs/MIGRATION_RUST.md`](docs/MIGRATION_RUST.md).
-> Phases livrées : **0** (logique métier sous tests), **1** (coquille Tauri), **2** (SQLite), **3** (noyau métier Rust), **4** (PDF et e-mail Rust).
+> 🦀 La migration vers Rust est terminée — voir [`docs/MIGRATION_RUST.md`](docs/MIGRATION_RUST.md).
+> Phases livrées : **0** (logique métier sous tests), **1** (coquille Tauri), **2** (SQLite), **3** (noyau métier Rust), **4** (PDF et e-mail Rust), **5** (interface Leptos).
 
 ---
 
@@ -47,8 +47,10 @@
 
 ### Prérequis
 
-* [Node.js](https://nodejs.org/) 18 ou supérieur
-* [Rust](https://rustup.rs/) 1.77 ou supérieur (`rustup default stable`)
+* [Rust](https://rustup.rs/) 1.77 ou supérieur (`rustup default stable`), avec la cible WebAssembly :
+  `rustup target add wasm32-unknown-unknown`
+* [trunk](https://trunkrs.dev/), qui compile l'interface : `cargo install trunk --locked`
+* [Node.js](https://nodejs.org/) 18 ou supérieur — uniquement pour la CLI Tauri
 * Sous Windows : **WebView2**, présent d'origine depuis Windows 10 21H2, et les *Build Tools* de Visual Studio (composant C++)
 * Sous Linux : `libwebkit2gtk-4.1-dev`, `build-essential`, `libssl-dev`, `libayatana-appindicator3-dev`, `librsvg2-dev`
 
@@ -70,25 +72,20 @@
    ```bash
    npm run dev
    ```
-   *Tauri lance le serveur Vite (port 5173) puis compile et ouvre l'application. La première compilation Rust prend plusieurs minutes ; les suivantes sont quasi instantanées.*
+   *Tauri lance `trunk serve` (port 5174), qui compile l'interface en WebAssembly et la recompile à chaque modification, puis compile et ouvre l'application. La première compilation prend plusieurs minutes ; les suivantes sont bien plus rapides.*
 
-   Pour travailler l'interface seule, sans recompiler Rust :
-   ```bash
-   npm run dev:vite
-   ```
-   *Les fonctionnalités qui dépendent de l'hôte — envoi d'e-mails, trousseau — sont alors désactivées proprement.*
+   L'interface ne fonctionne qu'à l'intérieur de l'application : toutes ses données passent par l'hôte. Ouverte seule dans un navigateur, elle ne peut rien charger.
 
 4. **Construire l'installeur** :
    ```bash
    npm run dist
    ```
-   *À utiliser systématiquement : `cargo build --release` ne régénère pas le frontend et produit un binaire qui cherche le serveur de développement. La compilation est désormais refusée dans ce cas, avec un message explicite.*
+   *À utiliser systématiquement : `cargo build --release` ne compile pas l'interface et produit un binaire qui cherche le serveur de développement. La compilation est refusée dans ce cas, avec un message explicite.*
 
 ### Tests
 
 ```bash
-npm test                      # logique métier (151 tests)
-cd src-tauri && cargo test    # hôte Rust
+cargo test --workspace        # noyau, PDF, hôte et interface
 ```
 
 ---

@@ -19,7 +19,7 @@ console_error_panic_hook = "0.1"
 
 [dependencies.web-sys]
 version = "0.3"
-features = ["HtmlInputElement", "HtmlSelectElement", "HtmlTextAreaElement", "Window", "Storage"]
+features = ["HtmlInputElement", "HtmlSelectElement", "HtmlTextAreaElement", "Window", "Storage", "File", "FileList", "FileReader", "Blob"]
 
 [dev-dependencies]
 # `dec!` s'etend en `rust_decimal::Decimal::...` : le crate doit etre une

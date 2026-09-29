@@ -8,9 +8,13 @@
 use asgard_core::money::{format_fr, round_cents};
 use asgard_core::Money;
 
+/// Espace insécable avant le symbole : la typographie française l'exige, et
+/// sans elle un tableau étroit renvoie « € » seul à la ligne.
+const BEFORE_SYMBOL: char = '\u{A0}';
+
 /// Montant en euros, séparateurs de milliers et deux décimales.
 pub fn euros(amount: f64) -> String {
-    format!("{} €", with_cents(amount))
+    format!("{}{BEFORE_SYMBOL}€", with_cents(amount))
 }
 
 /// Montant avec ses centimes, toujours affichés.
@@ -31,7 +35,7 @@ pub fn with_cents(amount: f64) -> String {
 
 /// Montant sans centimes, pour les seuils et plafonds.
 pub fn round_euros(amount: Money) -> String {
-    format!("{} €", format_fr(amount))
+    format!("{}{BEFORE_SYMBOL}€", format_fr(amount))
 }
 
 /// Pourcentage à une décimale, comme les jauges de l'interface.
@@ -59,39 +63,10 @@ pub fn payment_method(method: Option<&str>) -> &'static str {
         Some("carte") => "💳 Carte",
         Some("especes") => "💵 Espèces",
         Some("cheque") => "✉️ Chèque",
+        // Moyen propre aux dépenses, que la version React affichait déjà.
+        Some("prelevement") => "🔄 Prélèv.",
         // Le virement est le défaut historique, y compris quand le champ manque.
         _ => "🏦 Virement",
-    }
-}
-
-/// Libellé d'un type d'activité.
-pub fn service_type(raw: &str) -> &'static str {
-    match raw {
-        "service_bic" => "Artisanale/Comm. (BIC)",
-        "vente" => "Vente Marchandises",
-        _ => "Libérale (BNC)",
-    }
-}
-
-/// Libellé d'un statut de pièce.
-pub fn status(raw: &str) -> &'static str {
-    match raw {
-        "payee" => "Payée",
-        "envoyee" => "Envoyée",
-        "envoye" => "Envoyé",
-        "accepte" => "Accepté",
-        "refuse" => "Refusé",
-        _ => "Brouillon",
-    }
-}
-
-/// Classe CSS d'un statut, reprise du thème existant.
-pub fn status_class(raw: &str) -> &'static str {
-    match raw {
-        "payee" | "accepte" => "badge badge-success",
-        "envoyee" | "envoye" => "badge badge-info",
-        "refuse" => "badge badge-danger",
-        _ => "badge badge-muted",
     }
 }
 
@@ -110,14 +85,14 @@ mod tests {
 
     #[test]
     fn euros_appends_the_symbol() {
-        assert_eq!(euros(6924.2), "6\u{202F}924,20 €");
+        assert_eq!(euros(6924.2), "6\u{202F}924,20\u{A0}€");
     }
 
     /// Les seuils s'affichent sans centimes : « 77 700 € », pas « 77 700,00 € ».
     #[test]
     fn thresholds_omit_the_cents() {
-        assert_eq!(round_euros(dec!(77700)), "77\u{202F}700 €");
-        assert_eq!(round_euros(dec!(188700)), "188\u{202F}700 €");
+        assert_eq!(round_euros(dec!(77700)), "77\u{202F}700\u{A0}€");
+        assert_eq!(round_euros(dec!(188700)), "188\u{202F}700\u{A0}€");
     }
 
     #[test]
@@ -151,13 +126,5 @@ mod tests {
         assert_eq!(payment_method(None), "🏦 Virement");
         assert_eq!(payment_method(Some("")), "🏦 Virement");
         assert_eq!(payment_method(Some("carte")), "💳 Carte");
-    }
-
-    #[test]
-    fn labels_match_the_existing_interface() {
-        assert_eq!(service_type("service_bnc"), "Libérale (BNC)");
-        assert_eq!(service_type("vente"), "Vente Marchandises");
-        assert_eq!(status("payee"), "Payée");
-        assert_eq!(status("inconnu"), "Brouillon");
     }
 }

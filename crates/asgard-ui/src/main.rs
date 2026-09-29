@@ -10,10 +10,14 @@
 //! Le CSS est repris **tel quel** : le thème n'a pas à être refait, et le
 //! reprendre à l'identique est la meilleure garantie que le rendu ne dérive pas.
 
+mod actions;
+mod backup;
 mod format;
 mod ipc;
 mod settings;
 mod state;
+mod templates;
+mod validation;
 mod views;
 
 use leptos::prelude::*;
@@ -46,16 +50,23 @@ fn Root() -> impl IntoView {
             <main class="main-content">
                 <Show
                     when=move || !app.loading.get()
-                    fallback=|| view! { <p class="loading-note">"Chargement…"</p> }
+                    fallback=|| view! { <p class="metric-subtext">"Chargement…"</p> }
                 >
                     {move || match app.tab.get() {
                         Tab::Dashboard => views::dashboard().into_any(),
                         Tab::Clients => views::clients().into_any(),
-                        other => views::pending(other).into_any(),
+                        Tab::Invoices => views::invoices().into_any(),
+                        Tab::Estimates => views::estimates().into_any(),
+                        Tab::Expenses => views::expenses().into_any(),
+                        Tab::Compta => views::compta().into_any(),
+                        Tab::Settings => views::settings().into_any(),
                     }}
                 </Show>
             </main>
             <views::NoticeModal />
+            <views::ConfirmModal />
+            <views::EmailModal />
+            <views::PaymentModal />
         </div>
     }
 }

@@ -1,83 +1,93 @@
 # `asgard-ui` — interface Leptos
 
-Phase 5 du [plan de migration](../../docs/MIGRATION_RUST.md), la seule que le
-plan classait **optionnelle**. Son état est partiel, et volontairement : lisez
-la section « Où en est le portage » avant de vous y fier.
+Phase 5 du [plan de migration](../../docs/MIGRATION_RUST.md). Depuis sa
+livraison, **c'est l'interface que l'application sert** : React, Vite et le
+JavaScript applicatif ont été retirés du dépôt.
 
 ## Ce que cette phase apporte réellement
 
-Un seul bénéfice, mais il est net : **l'interface et l'hôte compilent le même
-crate de types**, [`asgard-ipc`](../asgard-ipc/src/lib.rs). Un champ renommé
-d'un côté ne compile plus de l'autre.
+Un bénéfice net : **l'interface et l'hôte compilent le même crate de types**,
+[`asgard-ipc`](../asgard-ipc/src/lib.rs). Un champ renommé d'un côté ne compile
+plus de l'autre. Le JavaScript n'avait pas cette garantie : `src/db.js`
+construisait des objets anonymes, et une divergence ne se voyait qu'à
+l'exécution, sur un `undefined` inattendu.
 
-Le JavaScript n'avait pas cette garantie. `src/db.js` construisait des objets
-anonymes et lisait ce que l'hôte voulait bien renvoyer : une divergence ne se
-voyait qu'à l'exécution, sur un `undefined` inattendu, et parfois seulement dans
-un cas d'usage rare.
+L'interface s'appuie aussi sur `asgard-core` : l'aperçu du calcul de TVA, par
+exemple, arrondit exactement comme l'hôte qui enregistrera la facture.
 
-Ce n'est pas rien, mais **l'utilisateur ne verra aucune différence** — ce que le
-plan annonçait déjà en estimant le retour de cette phase faible.
+## Organisation
 
-## Où en est le portage
-
-| Écran | État |
+| Module | Rôle |
 |---|---|
-| Coquille, navigation, fenêtres de message | porté |
-| Tableau de bord | porté |
-| Clients | porté, avec création, édition et suppression |
-| Devis, Factures, Dépenses, Comptabilité, Paramètres | **non portés** |
+| `state.rs` | État partagé (remplace les 39 `useState` de `App.jsx`) |
+| `actions.rs` | Appels à l'hôte : appeler, recharger, informer — toujours dans cet ordre |
+| `backup.rs` | Sauvegarde et restauration |
+| `validation.rs`, `templates.rs` | Validation des formulaires, gabarits d'e-mail |
+| `views/widgets.rs` | Fenêtre, champs, boutons — partagés au lieu d'être recopiés par écran |
+| `views/*.rs` | Un module par écran, plus les fenêtres communes (`modals.rs`) |
 
-Les onglets non portés affichent un message explicite plutôt qu'un écran vide,
-qui ressemblerait à une panne.
+## Fidèle à l'original, sauf là où l'original se trompait
 
-`crates/asgard-ui/src/views/clients.rs` sert de gabarit aux onglets restants :
-recherche, tableau, formulaire, appel à l'hôte, rechargement. Le schéma se
-répète pour les factures, devis et dépenses. Les deux gros morceaux sont
-`ComptaTab` et `SettingsTab`, environ 400 lignes de JSX chacun.
+Chaque texte visible, chaque classe CSS, chaque style en ligne reprend la
+version React. Le contrôle a été fait mécaniquement au moment de la bascule :
+tous les textes des composants JSX se retrouvent dans le port, et toutes les
+classes CSS utilisées existent dans le thème.
+
+Les écarts sont délibérés, et chacun est commenté à l'endroit du code :
+
+- **Badge et relance des factures envoyées.** L'original testait `'envoye'`
+  (l'orthographe des devis) au lieu de `'envoyee'` : une facture envoyée
+  n'avait aucun badge, et le bouton « Relancer » n'apparaissait jamais.
+- **Envoi d'un devis par e-mail.** La fenêtre annonçait « la facture » et la
+  pièce jointe s'affichait « undefined.pdf ». Elle nomme désormais la bonne pièce.
+- **Client supprimé.** Le jeton `{clientName}` restait vide ; il reprend la raison
+  sociale recopiée sur la pièce.
+- **Montants saisis avec une virgule.** `1899,99` était lu `1899`. Il est lu
+  correctement.
+- **Suppression d'une facture émise.** Le message n'annonce plus une suppression
+  « irréversible » : depuis la phase 2, une facture émise est archivée.
+- **Taux URSSAF illisible.** Il conserve la valeur précédente au lieu de passer à
+  zéro, ce qui annulait les cotisations sans prévenir.
 
 ## Le thème n'est pas réécrit
 
-`index.html` charge `src/index.css` et `src/App.css` **tels quels**. Les classes
-du balisage sont celles de l'original, au nom près. C'est la garantie la plus
-simple que le rendu ne dérive pas, et cela évite de refaire un design qui
-n'avait aucune raison de recommencer.
-
-Un écueil rencontré : la barre latérale avait d'abord été écrite avec des
-`<button>`, plus corrects sémantiquement que les `<li>` de l'original. Les
-styles par défaut du navigateur — fond blanc, bordure — sont alors apparus, la
-feuille de style n'ayant jamais eu à les neutraliser. Le balisage suit donc
-l'original, avec `role="button"` et `tabindex` ajoutés pour l'accès au clavier,
-que la version React n'offrait pas.
+`style/index.css` et `style/App.css` sont les feuilles de la version React,
+déplacées sans modification. Un écueil rencontré : la barre latérale avait
+d'abord été écrite avec des `<button>`, plus corrects sémantiquement que les
+`<li>` de l'original. Les styles par défaut du navigateur — fond blanc,
+bordure — sont alors apparus, la feuille n'ayant jamais eu à les neutraliser.
+Le balisage suit donc l'original, avec `role="button"` et `tabindex` ajoutés
+pour l'accès au clavier.
 
 ## Développer
 
 ```bash
 rustup target add wasm32-unknown-unknown
-cargo install trunk
+cargo install trunk --locked
 
-trunk serve --config crates/asgard-ui/Trunk.toml   # port 5174
-trunk build --release --config crates/asgard-ui/Trunk.toml
+npm run dev                  # trunk serve + hôte Tauri, recompilation à chaud
+cargo test -p asgard-ui      # tests de l'interface
 ```
 
-Servi seul, sans l'hôte Tauri, l'interface s'affiche mais toute commande échoue
-avec un message explicite : il n'y a pas de base à interroger. C'est utile pour
-travailler la mise en page, pas pour manipuler des données.
+L'interface ne se sert pas seule : toutes ses données passent par les commandes
+de l'hôte. Ouverte dans un navigateur, elle affiche sa coquille mais ne peut
+rien charger.
 
 ## Poids
 
 | | Taille |
 |---|---|
-| WebAssembly, profil release | **695 Ko** |
-| Liaison JavaScript | 38 Ko |
-| *Bundle React, pour comparaison* | *289 Ko, pour sept écrans sur sept* |
+| WebAssembly, profil release | **1,8 Mo** |
+| Liaison JavaScript | 41 Ko |
+| *Bundle React, pour comparaison* | *289 Ko* |
 
-Le profil de développement produit 4 Mo : ne pas s'y fier pour juger. Porter les
-cinq écrans restants ajoutera peu — l'essentiel du poids est le moteur Leptos et
-la bibliothèque standard — mais le total restera au-dessus de React.
+Mesuré sur `trunk build --release` avec le profil de l'espace de travail
+(`opt-level = "s"`, LTO). Avec deux écrans portés, le WebAssembly pesait
+695 Ko : les cinq autres ont plus que doublé le total. Chaque `view!` de
+Leptos engendre son propre type, donc son propre code — le poids suit le nombre
+d'écrans bien plus qu'en React. `wasm-opt` réduirait ce chiffre, mais trunk le
+télécharge à la première compilation — une dépendance réseau que le build n'a
+pas aujourd'hui.
 
-## Ce qui reste à décider
-
-Le `Trunk.toml` existe, mais `tauri.conf.json` pointe toujours sur Vite. Tant
-que le portage n'est pas complet, **c'est la version React que l'application
-empaquetée sert** — basculer maintenant priverait l'utilisateur de cinq écrans
-sur sept.
+Sur une application de bureau servie localement, la différence ne se remarque
+pas au chargement ; l'argument « plus léger » ne tient simplement pas.
