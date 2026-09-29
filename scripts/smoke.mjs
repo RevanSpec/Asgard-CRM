@@ -91,17 +91,25 @@ function diagnose() {
   return report.join(String.fromCharCode(10).repeat(2));
 }
 
+/// Le point de débogage n'écoute pas toujours sur la même pile : selon la
+/// machine, il se lie à IPv4, à IPv6, ou aux deux.
+const HOSTS = ['127.0.0.1', '[::1]', 'localhost'];
+
 async function findPage() {
   // Un runner froid met plus de temps qu'un poste de travail : la WebView
   // s'initialise à son premier lancement.
   const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
-    try {
-      const targets = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
-      const page = targets.find((t) => t.type === 'page' && t.url.includes('tauri'));
-      if (page) return page;
-    } catch {
-      // Le point de débogage n'écoute pas encore.
+    for (const host of HOSTS) {
+      try {
+        const targets = await (await fetch(`http://${host}:${PORT}/json`)).json();
+        const page = targets.find((t) => t.type === 'page' && t.url.includes('tauri'));
+        // L'adresse du WebSocket vient de la cible elle-même : pas besoin de
+        // retenir la pile qui a répondu.
+        if (page) return page;
+      } catch {
+        // Cette pile-là ne répond pas (encore).
+      }
     }
     await wait(500);
   }
