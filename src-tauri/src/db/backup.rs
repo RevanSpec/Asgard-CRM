@@ -360,7 +360,7 @@ mod tests {
                     "id": 1, "invoiceNumber": "FAC-WAYNEENTER-2026-0002",
                     "companyName": "Wayne", "serviceType": "service_bic", "date": "2026-03-12",
                     "amountHt": 1899.99, "tvaRate": 20.0,
-                    "amountTva": 379.998_000_000_000_05, "amountTotal": 2279.988_000_000_000_3
+                    "amountTva": 379.99800000000005, "amountTotal": 2279.9880000000003
                 }]
             })),
         )

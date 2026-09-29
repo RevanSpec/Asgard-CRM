@@ -140,7 +140,7 @@ mod artifacts_removed {
         let total = dec!(1899.99) + crate::money::percent_of(dec!(1899.99), dec!(20));
 
         assert_eq!(total, dec!(2279.988));
-        assert_ne!(to_f64(total), 2279.988_000_000_000_3);
+        assert_ne!(to_f64(total), 2279.9880000000003);
     }
 
     #[test]

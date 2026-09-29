@@ -124,6 +124,11 @@ struct Canvas<'a> {
 
 impl Canvas<'_> {
     /// Écrit un texte, avec alignement calculé — printpdf ne sait pas aligner.
+    ///
+    /// Beaucoup d'arguments, mais ce sont ceux d'une primitive de mise en page :
+    /// les regrouper dans une structure allongerait les dizaines d'appels sans
+    /// rien clarifier.
+    #[allow(clippy::too_many_arguments)]
     fn text(&self, content: &str, size: f32, x: f32, y: f32, align: Align, bold: bool, colour: Rgb) {
         let font = if bold { self.bold } else { self.regular };
         let start = match align {
@@ -137,6 +142,7 @@ impl Canvas<'_> {
     }
 
     /// Écrit un texte en le repliant dans une largeur maximale.
+    #[allow(clippy::too_many_arguments)]
     fn wrapped(&self, content: &str, size: f32, x: f32, y: f32, max_width: f32, bold: bool, colour: Rgb) {
         // 5 mm d'interligne, comme l'espacement des blocs de l'original.
         for (index, line) in wrap(content, max_width, size, bold).iter().enumerate() {
@@ -393,7 +399,7 @@ pub fn render(
     );
     canvas.text(&footer, 7.0, PAGE_WIDTH / 2.0, 267.0, Align::Center, false, GREY);
 
-    Ok(doc.save_to_bytes()?)
+    doc.save_to_bytes()
 }
 
 #[cfg(test)]

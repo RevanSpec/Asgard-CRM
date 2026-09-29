@@ -86,7 +86,24 @@
 
 ```bash
 cargo test --workspace        # noyau, PDF, hôte et interface
+cargo clippy --workspace --all-targets -- -D warnings
 ```
+
+Ces commandes tournent sur chaque proposition de modification
+([`.github/workflows/ci.yml`](.github/workflows/ci.yml)).
+
+**Parcours de l'application.** Les tests unitaires ne voient pas une interface
+qui se fige. Un second script lance l'application, s'attache à sa WebView et
+joue un parcours complet — sept écrans, création d'un client, facturation avec
+virgule décimale, encaissement, envoi par e-mail, conversion d'un devis,
+suppressions — en échouant à la moindre erreur de console :
+
+```bash
+node scripts/smoke.mjs target/release/asgard-crm.exe
+```
+
+> ⚠️ Il écrit dans votre base. Sauvegardez `%APPDATA%/com.asgard.crm` avant de
+> le lancer en local ; en intégration continue, la base part vierge.
 
 ---
 

@@ -1,0 +1,85 @@
+# Intégration continue.
+#
+# Deux travaux, volontairement séparés : le premier est rapide et tourne sur
+# chaque proposition ; le second compile l'application entière et la parcourt,
+# ce qui prend une dizaine de minutes.
+#
+# `cargo fmt` n'est pas exigé : la mise en forme de ce dépôt est tenue à la
+# main, et l'imposer réécrirait des centaines de lignes sans rien gagner en
+# justesse. Clippy, lui, est exigé sans indulgence.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  tests:
+    name: Tests et clippy
+    # Windows : c'est la plateforme du produit, et l'hôte Tauri s'y compile
+    # sans dépendances système supplémentaires.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Chaîne Rust
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Tests de l'espace de travail
+        run: cargo test --workspace
+
+      - name: Clippy (hôte, noyau, PDF, contrat)
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Clippy (interface, cible WebAssembly)
+        run: cargo clippy -p asgard-ui --target wasm32-unknown-unknown --all-targets -- -D warnings
+
+      - name: L'interface compile en WebAssembly
+        run: cargo check -p asgard-ui --target wasm32-unknown-unknown
+
+  smoke:
+    name: Parcours de l'application
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Chaîne Rust
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Outils de compilation de l'interface
+        run: cargo install trunk --locked --version 0.21.14
+
+      - run: npm ci
+
+      # Profil de débogage : le parcours vérifie le comportement, pas la
+      # taille du binaire, et la compilation release (LTO) prendrait trois
+      # fois plus de temps.
+      - name: Construire l'application
+        run: npm run tauri -- build --debug --no-bundle
+
+      # La base est créée à la volée dans le dossier de données du runner :
+      # le jeu de démonstration y est semé, donc le contenu est prévisible.
+      - name: Parcourir l'application
+        run: node scripts/smoke.mjs target/debug/asgard-crm.exe
+
+      - name: Captures d'écran
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: captures
+          path: target/smoke/
+          if-no-files-found: ignore
