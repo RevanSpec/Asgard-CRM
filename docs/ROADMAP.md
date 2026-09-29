@@ -103,7 +103,15 @@ Quatre lots. A et B touchent les mêmes écrans et le même chemin d'émission :
 les enchaîner évite de payer deux fois la relecture. C et D sont indépendants et
 peuvent glisser.
 
-### Lot A — Un premier lancement honnête *(2-3 j)* — D11, D12, D13
+### Lot A — Un premier lancement honnête *(2-3 j)* — D11, D12, D13 ✅ **livré**
+
+> **Livré.** `Settings::default()` n'a plus d'identité, `Issuer::missing_fields`
+> refuse l'édition d'une pièce incomplète, l'écran d'accueil
+> (`crates/asgard-ui/src/views/onboarding.rs`) demande les quatre champs exigés et
+> propose le jeu d'exemple au lieu de le semer, et les réglages vivent dans la
+> table `app_settings` — donc dans les copies quotidiennes. Le parcours de
+> l'application couvre l'accueil, son refus sans identité, et le refus d'éditer
+> une facture sans SIRET.
 
 L'objectif : sur une machine vierge, **aucune facture ne peut sortir avec une
 identité qui n'est pas celle de l'utilisateur**.

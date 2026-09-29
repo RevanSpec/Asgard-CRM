@@ -210,3 +210,23 @@ pub struct CreditNoteInput {
     #[serde(default)]
     pub refunded_on: Option<String>,
 }
+
+/// Réglages tels que la base les conserve, et état du premier lancement.
+///
+/// Les réglages vivaient dans le `localStorage` de la WebView, hors de portée
+/// de toute sauvegarde automatique : la copie quotidienne est un `VACUUM INTO`
+/// du fichier SQLite, et l'identité, le logo et la configuration SMTP étaient
+/// ailleurs (défaut D13). La base fait désormais foi ; le `localStorage` reste
+/// un cache synchrone, parce que l'interface lit les réglages pendant le rendu.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoredSettings {
+    /// JSON des réglages, tel que l'interface l'a écrit. Absent d'une base qui
+    /// n'en a jamais reçu.
+    #[serde(default)]
+    pub settings: Option<String>,
+    /// Faux uniquement sur une base vierge dont personne n'a encore rempli
+    /// l'écran d'accueil : une installation qui contient déjà du travail n'a
+    /// pas à le revoir.
+    pub first_run_done: bool,
+}

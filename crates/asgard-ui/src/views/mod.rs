@@ -16,6 +16,7 @@ mod expenses;
 pub mod icons;
 mod invoices;
 pub mod modals;
+mod onboarding;
 mod settings_view;
 mod sidebar;
 mod widgets;
@@ -27,6 +28,7 @@ pub use estimates::estimates;
 pub use expenses::expenses;
 pub use invoices::invoices;
 pub use modals::{ConfirmModal, EmailModal, PaymentModal};
+pub use onboarding::onboarding;
 pub use settings_view::settings;
 pub use sidebar::Sidebar;
 

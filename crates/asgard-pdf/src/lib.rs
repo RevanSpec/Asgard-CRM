@@ -119,21 +119,57 @@ pub struct Issuer {
     pub logo: String,
 }
 
+impl Issuer {
+    /// Champs indispensables qui manquent pour éditer une pièce de cette nature.
+    ///
+    /// Une pièce ne doit jamais porter une identité que l'émetteur n'a pas
+    /// saisie. L'ancienne version en fabriquait une — raison sociale de
+    /// démonstration, IBAN de gabarit — et rien ne distinguait à l'écran une
+    /// facture valable d'une facture au nom de personne (défaut D11).
+    ///
+    /// Le SIRET est obligatoire sur toute pièce commerciale. L'IBAN ne l'est
+    /// que sur une facture : c'est la seule qui demande un règlement.
+    pub fn missing_fields(&self, kind: DocumentKind) -> Vec<&'static str> {
+        let mut missing = Vec::new();
+
+        for (label, value) in [
+            ("la raison sociale", &self.company_name),
+            ("l'adresse", &self.address),
+            ("le SIRET", &self.siret),
+        ] {
+            if value.trim().is_empty() {
+                missing.push(label);
+            }
+        }
+
+        if kind.is_invoice() && self.iban.trim().is_empty() {
+            missing.push("l'IBAN");
+        }
+
+        missing
+    }
+}
+
 impl Default for Issuer {
+    /// Aucune identité par défaut : seule la couleur d'accentuation en a une,
+    /// parce qu'un document doit bien être dessiné avec une couleur.
     fn default() -> Self {
         Self {
-            company_name: "Mon Auto-Entreprise".into(),
-            contact_name: "Votre Nom".into(),
-            address: "Votre Adresse".into(),
-            phone: "06 00 00 00 00".into(),
-            email: "contact@monentreprise.fr".into(),
+            company_name: String::new(),
+            contact_name: String::new(),
+            address: String::new(),
+            phone: String::new(),
+            email: String::new(),
             siret: String::new(),
             iban: String::new(),
-            accent_colour: "#E5A93C".into(),
+            accent_colour: DEFAULT_ACCENT.into(),
             logo: String::new(),
         }
     }
 }
+
+/// Couleur d'accentuation retenue quand les réglages n'en fixent pas.
+pub const DEFAULT_ACCENT: &str = "#E5A93C";
 
 const NAVY: Rgb = Rgb(11, 15, 25);
 const GREY: Rgb = Rgb(100, 116, 139);
@@ -306,22 +342,26 @@ pub fn legal_notice(
         notice.push_str(
             "Dispensé d'immatriculation au registre du commerce et des sociétés (RCS) et au répertoire des métiers (RM).\n",
         );
-        let iban = if iban.is_empty() {
-            "FR76 0000 0000 0000 0000 0000 000"
+        // Aucun IBAN de gabarit. L'ancienne version en imprimait un —
+        // `FR76 0000 …` — qui envoyait le client virer sur un compte
+        // inexistant. `Issuer::missing_fields` refuse désormais d'éditer une
+        // facture sans IBAN ; si la mention manque malgré tout, elle disparaît
+        // au lieu d'être inventée (défaut D11).
+        let account = if iban.trim().is_empty() {
+            String::new()
         } else {
-            iban
+            format!(" IBAN : {iban}")
         };
         // L'échéance figure ici aussi : le pied de page est l'endroit où se
         // lisent les conditions de règlement, et une facture sans échéance
         // enregistrée conserve la formule générale d'avant.
         match due_date {
             Some(due) => notice.push_str(&format!(
-                "Mode de règlement : Virement bancaire. Échéance : {}. IBAN : {iban}\n",
+                "Mode de règlement : Virement bancaire. Échéance : {}.{account}\n",
                 due.format_fr()
             )),
-            None => notice.push_str(&format!(
-                "Mode de règlement : Virement bancaire sous 30 jours. IBAN : {iban}\n"
-            )),
+            None => notice
+                .push_str(&format!("Mode de règlement : Virement bancaire sous 30 jours.{account}\n")),
         }
         // Mentions obligatoires entre professionnels : articles L441-10 et
         // D441-5 du code de commerce. Leur absence est sanctionnable, et elles

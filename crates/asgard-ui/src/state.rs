@@ -207,6 +207,9 @@ pub struct App {
     pub payment: RwSignal<Option<PaymentForm>>,
     /// Vrai tant que le premier chargement n'a pas abouti.
     pub loading: RwSignal<bool>,
+    /// Vrai sur une installation neuve, dont personne n'a encore rempli
+    /// l'accueil : l'écran d'accueil remplace alors l'application.
+    pub first_run: RwSignal<bool>,
     /// Incrémenté quand les réglages sont remplacés de l'extérieur (reprise
     /// d'une sauvegarde) : l'écran Paramètres se reconstruit alors, au lieu de
     /// réécrire les réglages restaurés avec les valeurs qu'il avait en mémoire.
@@ -232,6 +235,7 @@ impl App {
             email: RwSignal::new(None),
             payment: RwSignal::new(None),
             loading: RwSignal::new(true),
+            first_run: RwSignal::new(false),
             settings_epoch: RwSignal::new(0),
         }
     }
@@ -253,6 +257,37 @@ impl App {
     /// l'original (« Erreur lors de la conversion : … »).
     pub fn report_as(&self, context: &str, error: ipc::IpcError) {
         self.inform("Erreur", format!("{context} : {error}"));
+    }
+
+    /// Premier chargement : les réglages, puis les données.
+    ///
+    /// Les réglages viennent d'abord parce que les agrégats en dépendent — taux
+    /// de cotisation, ACRE — et qu'il serait absurde de calculer une déclaration
+    /// avec les valeurs par défaut avant de la recalculer une seconde plus tard.
+    ///
+    /// **La base fait foi.** C'est elle que la copie quotidienne emporte ; le
+    /// `localStorage` n'est qu'un cache, qu'un profil de WebView nettoyé emporte
+    /// sans prévenir (défaut D13). Une base qui n'a jamais reçu de réglages
+    /// adopte donc ceux du cache, ce qui reprend les installations existantes.
+    pub async fn bootstrap(self) {
+        match ipc::call::<asgard_ipc::StoredSettings>("load_stored_settings").await {
+            Ok(stored) => {
+                match stored.settings.as_deref() {
+                    Some(json) => crate::settings::adopt(json),
+                    None => crate::settings::adopt_cache_into_database(),
+                }
+                self.first_run.set(!stored.first_run_done);
+            }
+            // Hors de l'application de bureau — `trunk serve` — il n'y a pas
+            // d'hôte : le cache seul répond, et l'accueil ne s'affiche pas. Un
+            // avertissement plutôt qu'une fenêtre : le chargement des données,
+            // juste après, signalera l'absence d'hôte de toute façon.
+            Err(error) => web_sys::console::warn_1(
+                &format!("Réglages non relus depuis la base : {error}").into(),
+            ),
+        }
+
+        self.reload().await;
     }
 
     /// Recharge données et agrégats.

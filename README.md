@@ -7,7 +7,8 @@
 ## 🚀 Fonctionnalités clés
 
 - 📊 **Tableau de bord dynamique** : Suivi en temps réel de votre chiffre d'affaires, statistiques mensuelles/annuelles, graphiques d'évolution et santé financière globale.
-- 👥 **Gestion des clients** : Fiches clients complètes (coordonnées, SIRET, historique d'affaires) pour un suivi optimal.
+- 🚀 **Premier lancement guidé** : L'application demande les informations qui figurent sur vos factures — raison sociale, adresse, SIRET, IBAN — et refuse d'éditer une pièce tant qu'elles manquent, plutôt que d'imprimer une identité qui n'est pas la vôtre. Le jeu de données d'exemple est proposé, jamais imposé.
+- 👥 **Gestion des clients** : Fiches clients (coordonnées, historique d'affaires) pour un suivi optimal.
 - 📄 **Devis & Factures** :
   - Création et édition intuitive de devis et factures.
   - Génération automatique des numéros de pièces réglementaires (`DEV-CLIENT-ANNEE-XXXX` / `FAC-CLIENT-ANNEE-XXXX`).
@@ -26,6 +27,7 @@
   - Base de données locale **SQLite**, montants stockés en centimes. Aucune donnée ne quitte votre machine.
   - Export et import de sauvegardes complètes pour ne jamais perdre vos données.
   - **Copie automatique** de la base au premier lancement de chaque journée, les sept dernières conservées à côté de la base.
+  - Vos réglages — identité, logo, gabarits d'e-mail, configuration SMTP — vivent **dans la base**, et sont donc emportés par ces copies comme par vos exportations.
 
 ---
 
@@ -97,9 +99,10 @@ Ces commandes tournent sur chaque proposition de modification
 
 **Parcours de l'application.** Les tests unitaires ne voient pas une interface
 qui se fige. Un second script lance l'application, s'attache à sa WebView et
-joue un parcours complet — sept écrans, création d'un client, facturation avec
-virgule décimale, encaissement, envoi par e-mail, conversion d'un devis,
-suppressions — en échouant à la moindre erreur de console :
+joue un parcours complet — accueil du premier lancement, sept écrans, création
+d'un client, facturation avec virgule décimale, encaissement, avoir, envoi par
+e-mail, conversion d'un devis, suppressions, et le refus d'éditer une facture
+sans SIRET — en échouant à la moindre erreur de console :
 
 ```bash
 node scripts/smoke.mjs target/release/asgard-crm.exe
