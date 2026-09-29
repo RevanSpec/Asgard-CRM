@@ -66,8 +66,35 @@ function stop() {
   }
 }
 
+/// Ce qu'on peut dire de la machine quand la WebView ne répond pas.
+///
+/// Sans cela, l'échec se résume à « pas de page de débogage », ce qui
+/// n'oriente vers rien : runtime absent, fenêtre jamais créée, port filtré,
+/// tout se ressemble.
+function diagnose() {
+  const report = [];
+  const run = (label, command) => {
+    try {
+      report.push(`${label} :\n${execSync(command, { encoding: 'utf8', stdio: 'pipe' }).trim()}`);
+    } catch (error) {
+      report.push(`${label} : indisponible (${String(error.message).split(String.fromCharCode(10))[0]})`);
+    }
+  };
+
+  report.push(`processus lancé : ${app.pid}, encore vivant : ${app.exitCode === null}`);
+  run(
+    'version du runtime WebView2',
+    'reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" /v pv',
+  );
+  run('processus de WebView', 'tasklist /fi "imagename eq msedgewebview2.exe"');
+  run('ports en écoute', `netstat -ano | findstr LISTENING | findstr ${PORT}`);
+  return report.join(String.fromCharCode(10).repeat(2));
+}
+
 async function findPage() {
-  const deadline = Date.now() + 60_000;
+  // Un runner froid met plus de temps qu'un poste de travail : la WebView
+  // s'initialise à son premier lancement.
+  const deadline = Date.now() + 120_000;
   while (Date.now() < deadline) {
     try {
       const targets = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
@@ -78,7 +105,10 @@ async function findPage() {
     }
     await wait(500);
   }
-  throw new Error(`aucune page de débogage sur le port ${PORT}. Sortie de l'application :\n${appOutput}`);
+
+  throw new Error(
+    `aucune page de débogage sur le port ${PORT}.\n\nSortie de l'application :\n${appOutput}\n\n${diagnose()}`,
+  );
 }
 
 const page = await findPage();
