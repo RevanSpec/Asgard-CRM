@@ -68,8 +68,17 @@ jobs:
       # Profil de débogage : le parcours vérifie le comportement, pas la
       # taille du binaire, et la compilation release (LTO) prendrait trois
       # fois plus de temps.
+      # `tauri.smoke.conf.json` inscrit l'argument de débogage de la WebView
+      # dans l'application. La variable d'environnement équivalente
+      # (WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS) suffit sur un poste de travail,
+      # mais reste sans effet ici : le diagnostic montre la WebView démarrée,
+      # ses processus en session interactive, et aucun port de débogage ouvert.
+      #
+      # Cette clé remplace les arguments que wry passe par défaut : ils sont
+      # redonnés dans le fichier. Un dossier de données distinct est exigé dès
+      # lors que les arguments diffèrent.
       - name: Construire l'application
-        run: npm run tauri -- build --debug --no-bundle
+        run: npm run tauri -- build --debug --no-bundle --config src-tauri/tauri.smoke.conf.json
 
       # La base est créée à la volée dans le dossier de données du runner :
       # le jeu de démonstration y est semé, donc le contenu est prévisible.

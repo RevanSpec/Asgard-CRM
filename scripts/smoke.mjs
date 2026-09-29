@@ -87,6 +87,12 @@ function diagnose() {
     'reg query "HKLM\\SOFTWARE\\WOW6432Node\\Microsoft\\EdgeUpdate\\Clients\\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" /v pv',
   );
   run('processus de WebView', 'tasklist /fi "imagename eq msedgewebview2.exe"');
+  // La ligne de commande dit si l'argument de débogage a été transmis : c'est
+  // la différence entre « la WebView l'ignore » et « on ne le lui a pas donné ».
+  run(
+    'arguments de la WebView',
+    `wmic process where "name='msedgewebview2.exe'" get commandline /format:list`,
+  );
   run('ports en écoute', `netstat -ano | findstr LISTENING | findstr ${PORT}`);
   return report.join(String.fromCharCode(10).repeat(2));
 }
