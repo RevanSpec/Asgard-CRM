@@ -312,6 +312,11 @@ await send('Log.enable');
 // Deux ouvertures possibles. Une base vierge — le cas en intégration continue —
 // s'ouvre sur l'accueil du premier lancement ; une base déjà en service s'ouvre
 // directement sur l'application.
+//
+// L'attente porte donc sur les deux, **et** sur la fin du chargement : tant que
+// l'hôte n'a pas répondu, ni l'un ni l'autre n'est affiché, et trancher avant
+// reviendrait à jouer à pile ou face — un runner froid répondant plus lentement
+// qu'un poste de travail.
 const WELCOME = 'Bienvenue dans Asgard CRM';
 await until(
   `document.querySelector('.sidebar') !== null || document.body.innerText.includes(${JSON.stringify(WELCOME)})`,
@@ -356,7 +361,12 @@ if (welcoming) {
     await ev(`__t.click('button', 'exemple')`);
     await until(`document.querySelector('.sidebar') !== null`, "ouverture de l'application", 20_000);
     await ev(HELPERS);
-    return IDENTITY.SIRET;
+    // Le jeu d'exemple est semé par l'hôte pendant que l'écran bascule : les
+    // étapes suivantes en dépendent, donc on attend de le voir plutôt que de
+    // supposer qu'il est arrivé.
+    await goto('Clients');
+    await until(`__t.rows().length >= 3`, "jeu d'exemple chargé", 15_000);
+    return `${IDENTITY.SIRET}, ${await ev('__t.rows().length')} clients d'exemple`;
   });
 }
 
