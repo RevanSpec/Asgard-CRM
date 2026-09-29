@@ -151,10 +151,15 @@ pub async fn execute(app: App, action: Pending) {
 
         Pending::ConvertEstimate { id, .. } => {
             #[derive(Serialize)]
+            #[serde(rename_all = "camelCase")]
             struct Args {
                 id: i64,
+                /// La facture issue d'un devis porte la même échéance qu'une
+                /// facture saisie directement.
+                payment_terms_days: u32,
             }
-            match ipc::invoke::<_, asgard_ipc::Invoice>("convert_estimate", &Args { id }).await {
+            let args = Args { id, payment_terms_days: settings::load().payment_terms_days };
+            match ipc::invoke::<_, asgard_ipc::Invoice>("convert_estimate", &args).await {
                 Ok(invoice) => {
                     app.reload().await;
                     app.tab.set(crate::state::Tab::Invoices);
@@ -191,7 +196,8 @@ pub async fn save_client(app: App, client: ClientInput) -> bool {
     }
 }
 
-/// Crée une facture. L'hôte attribue le numéro et calcule TVA et total.
+/// Crée une facture. L'hôte attribue le numéro, calcule TVA et total, et
+/// déduit l'échéance du délai de règlement porté par la saisie.
 pub async fn create_invoice(app: App, invoice: DocumentInput) -> bool {
     #[derive(Serialize)]
     struct Args {

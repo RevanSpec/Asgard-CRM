@@ -69,6 +69,9 @@ pub struct Document {
     pub amount_tva: Money,
     pub amount_total: Money,
     pub date: CivilDate,
+    /// Échéance de règlement. Absente sur les factures émises avant qu'elle ne
+    /// soit enregistrée, et sur les devis, qui n'en ont pas.
+    pub due_date: Option<CivilDate>,
 }
 
 /// Coordonnées du client destinataire.
@@ -204,12 +207,28 @@ fn type_label(service_type: ServiceType) -> &'static str {
     }
 }
 
+/// Conditions de retard, obligatoires sur une facture entre professionnels.
+///
+/// Le taux est exprimé en multiple de l'intérêt légal plutôt qu'en pourcentage
+/// figé : l'intérêt légal change deux fois par an, et un nombre écrit en dur
+/// dans le code serait faux six mois plus tard.
+const LATE_PAYMENT_TERMS: &str = concat!(
+    "En cas de retard de paiement : pénalités au taux de trois fois l'intérêt légal, ",
+    "exigibles sans rappel, et indemnité forfaitaire pour frais de recouvrement de 40 € ",
+    "(art. L441-10 et D441-5 du code de commerce). Escompte pour paiement anticipé : néant.",
+);
+
 /// Mentions légales du bas de page.
 ///
 /// Le texte est réglementaire et dépend du type de document et du taux de TVA.
 /// Le sortir du code de dessin le rend testable — c'est la partie qui expose à
 /// un contrôle, pas la position des traits.
-pub fn legal_notice(kind: DocumentKind, tva_rate: Money, iban: &str) -> String {
+pub fn legal_notice(
+    kind: DocumentKind,
+    tva_rate: Money,
+    iban: &str,
+    due_date: Option<CivilDate>,
+) -> String {
     let mut notice = String::new();
 
     if kind.is_invoice() {
@@ -224,9 +243,22 @@ pub fn legal_notice(kind: DocumentKind, tva_rate: Money, iban: &str) -> String {
         } else {
             iban
         };
-        notice.push_str(&format!(
-            "Mode de règlement : Virement bancaire sous 30 jours. IBAN : {iban}"
-        ));
+        // L'échéance figure ici aussi : le pied de page est l'endroit où se
+        // lisent les conditions de règlement, et une facture sans échéance
+        // enregistrée conserve la formule générale d'avant.
+        match due_date {
+            Some(due) => notice.push_str(&format!(
+                "Mode de règlement : Virement bancaire. Échéance : {}. IBAN : {iban}\n",
+                due.format_fr()
+            )),
+            None => notice.push_str(&format!(
+                "Mode de règlement : Virement bancaire sous 30 jours. IBAN : {iban}\n"
+            )),
+        }
+        // Mentions obligatoires entre professionnels : articles L441-10 et
+        // D441-5 du code de commerce. Leur absence est sanctionnable, et elles
+        // manquaient depuis l'origine.
+        notice.push_str(LATE_PAYMENT_TERMS);
     } else {
         notice.push_str("Devis valable pour une durée de 3 mois à compter de la date d'émission.\n");
         notice.push_str(
@@ -315,6 +347,19 @@ pub fn render(
         false,
         NAVY,
     );
+    // L'échéance est une mention obligatoire (art. L441-9 du code de commerce),
+    // et le client la cherche ici, à côté de la date d'émission.
+    if let Some(due) = document.due_date.filter(|_| kind.is_invoice()) {
+        canvas.text(
+            &format!("Échéance : {}", due.format_fr()),
+            9.0,
+            PAGE_WIDTH - 20.0,
+            y + 18.0,
+            Align::Right,
+            true,
+            NAVY,
+        );
+    }
 
     // 3. Tableau de la prestation
     let y = 110.0;
@@ -365,7 +410,7 @@ pub fn render(
     let y = 190.0;
     canvas.text("MENTIONS LÉGALES & CONDITIONS", 8.0, 20.0, y, Align::Left, true, NAVY);
 
-    let notice = legal_notice(kind, document.tva_rate, &issuer.iban);
+    let notice = legal_notice(kind, document.tva_rate, &issuer.iban, document.due_date);
     let max_width = if kind.is_invoice() { PAGE_WIDTH - 40.0 } else { 95.0 };
 
     let mut line_y = y + 5.0;

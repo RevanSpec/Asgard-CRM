@@ -10,6 +10,7 @@ use sqlx::{Row, SqlitePool};
 use asgard_ipc::*;
 use super::money::from_cents;
 use asgard_core::money::to_cents as decimal_to_cents;
+use asgard_core::CivilDate;
 use super::numbering::{self, DocumentKind};
 use super::DbError;
 
@@ -132,6 +133,7 @@ fn invoice_from_row(r: &sqlx::sqlite::SqliteRow) -> Invoice {
         amount_tva: from_cents(r.get("amount_tva_cents")),
         amount_total: from_cents(r.get("amount_total_cents")),
         date: r.get("date"),
+        due_date: r.get("due_date"),
         status: r.get("status"),
         payment_date: r.get("payment_date"),
         payment_method: r.get("payment_method"),
@@ -147,6 +149,19 @@ pub async fn list_invoices(pool: &SqlitePool) -> Result<Vec<Invoice>, DbError> {
 
     Ok(rows.iter().map(invoice_from_row).collect())
 }
+
+/// Échéance de règlement d'une facture émise à `date`.
+///
+/// Le délai vient des réglages de l'interface ; trente jours à défaut, la durée
+/// que le pied de page annonçait déjà. Une date illisible ne produit pas
+/// d'échéance plutôt qu'une fausse.
+fn due_date(date: &str, terms_days: Option<u32>) -> Option<String> {
+    let days = terms_days.unwrap_or(DEFAULT_PAYMENT_TERMS_DAYS);
+    CivilDate::parse(date).map(|d| d.plus_days(days).to_iso())
+}
+
+/// Délai de règlement retenu quand les réglages n'en donnent pas.
+pub const DEFAULT_PAYMENT_TERMS_DAYS: u32 = 30;
 
 /// Crée une facture et lui attribue son numéro dans la même transaction.
 pub async fn create_invoice(pool: &SqlitePool, input: DocumentInput) -> Result<Invoice, DbError> {
@@ -165,8 +180,8 @@ pub async fn create_invoice(pool: &SqlitePool, input: DocumentInput) -> Result<I
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO invoices (client_id, company_name, invoice_number, service_type,
             description, amount_ht_cents, tva_rate, amount_tva_cents, amount_total_cents,
-            date, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING id",
+            date, due_date, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) RETURNING id",
     )
     .bind(input.client_id)
     .bind(&input.company_name)
@@ -178,6 +193,7 @@ pub async fn create_invoice(pool: &SqlitePool, input: DocumentInput) -> Result<I
     .bind(decimal_to_cents(amounts.amount_tva))
     .bind(decimal_to_cents(amounts.amount_total))
     .bind(&input.date)
+    .bind(due_date(&input.date, input.payment_terms_days))
     .bind(input.status.as_deref().unwrap_or("brouillon"))
     .fetch_one(&mut *tx)
     .await?;
@@ -407,7 +423,11 @@ pub async fn delete_estimate(pool: &SqlitePool, id: i64) -> Result<DeleteOutcome
 /// Convertit un devis en facture : la facture reçoit un numéro neuf, le devis
 /// passe en « accepté ». Les deux dans la même transaction, pour qu'un échec ne
 /// laisse pas un devis accepté sans facture.
-pub async fn convert_estimate(pool: &SqlitePool, estimate_id: i64) -> Result<Invoice, DbError> {
+pub async fn convert_estimate(
+    pool: &SqlitePool,
+    estimate_id: i64,
+    payment_terms_days: Option<u32>,
+) -> Result<Invoice, DbError> {
     let mut tx = pool.begin().await?;
 
     let est = sqlx::query("SELECT * FROM estimates WHERE id = ?1 AND deleted_at IS NULL")
@@ -425,8 +445,8 @@ pub async fn convert_estimate(pool: &SqlitePool, estimate_id: i64) -> Result<Inv
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO invoices (client_id, company_name, invoice_number, service_type,
             description, amount_ht_cents, tva_rate, amount_tva_cents, amount_total_cents,
-            date, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, 'brouillon') RETURNING id",
+            date, due_date, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'brouillon') RETURNING id",
     )
     .bind(est.get::<Option<i64>, _>("client_id"))
     .bind(&company_name)
@@ -438,6 +458,7 @@ pub async fn convert_estimate(pool: &SqlitePool, estimate_id: i64) -> Result<Inv
     .bind(est.get::<i64, _>("amount_tva_cents"))
     .bind(est.get::<i64, _>("amount_total_cents"))
     .bind(&date)
+    .bind(due_date(&date, payment_terms_days))
     .fetch_one(&mut *tx)
     .await?;
 
@@ -533,4 +554,124 @@ pub async fn snapshot(pool: &SqlitePool) -> Result<Snapshot, DbError> {
         estimates: list_estimates(pool).await?,
         expenses: list_expenses(pool).await?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Base vierge, avec le client que les pièces de test facturent — la clé
+    /// étrangère l'exige.
+    async fn fresh_pool() -> SqlitePool {
+        let pool = SqlitePool::connect("sqlite::memory:").await.unwrap();
+        sqlx::migrate!().run(&pool).await.unwrap();
+
+        save_client(
+            &pool,
+            ClientInput {
+                id: None,
+                company_name: "Asgard Coffee & Co".into(),
+                contact_name: "Valkyrie".into(),
+                email: "valk@coffee.asgard".into(),
+                phone: "06 55 55 55 55".into(),
+                address: "45 rue du Bifrost, 75011 Paris".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        pool
+    }
+
+    fn input(date: &str, terms: Option<u32>) -> DocumentInput {
+        DocumentInput {
+            id: None,
+            client_id: 1,
+            company_name: "Asgard Coffee & Co".into(),
+            service_type: "vente".into(),
+            description: "Grains de café".into(),
+            amount_ht: 1000.0,
+            tva_rate: 20.0,
+            date: date.into(),
+            payment_terms_days: terms,
+            status: None,
+        }
+    }
+
+    #[test]
+    fn the_due_date_follows_the_configured_delay() {
+        assert_eq!(
+            due_date("2026-04-18T10:00:00Z", Some(45)),
+            Some("2026-06-02".to_string())
+        );
+    }
+
+    /// Sans réglage, le délai reste celui que le pied de page annonçait déjà.
+    #[test]
+    fn an_absent_delay_falls_back_to_thirty_days() {
+        assert_eq!(due_date("2026-04-18T10:00:00Z", None), Some("2026-05-18".to_string()));
+    }
+
+    /// Une date illisible ne produit pas d'échéance : mieux vaut aucune date
+    /// qu'une date fausse sur une pièce qui ne se corrige que par avoir.
+    #[test]
+    fn an_unreadable_date_yields_no_due_date() {
+        assert_eq!(due_date("pas une date", Some(30)), None);
+    }
+
+    #[tokio::test]
+    async fn a_created_invoice_carries_its_due_date() {
+        let pool = fresh_pool().await;
+
+        let invoice = create_invoice(&pool, input("2026-04-18T10:00:00Z", Some(45)))
+            .await
+            .unwrap();
+
+        assert_eq!(invoice.due_date.as_deref(), Some("2026-06-02"));
+
+        // Et elle ressort telle quelle de la base, pas seulement de l'insertion.
+        let listed = list_invoices(&pool).await.unwrap();
+        assert_eq!(listed[0].due_date.as_deref(), Some("2026-06-02"));
+    }
+
+    /// Le délai est figé à l'émission : changer le réglage ensuite ne déplace
+    /// pas l'échéance d'une facture déjà envoyée.
+    #[tokio::test]
+    async fn changing_the_delay_leaves_past_invoices_alone() {
+        let pool = fresh_pool().await;
+
+        let first = create_invoice(&pool, input("2026-04-18T10:00:00Z", Some(30)))
+            .await
+            .unwrap();
+        let second = create_invoice(&pool, input("2026-04-18T10:00:00Z", Some(60)))
+            .await
+            .unwrap();
+
+        assert_eq!(first.due_date.as_deref(), Some("2026-05-18"));
+        assert_eq!(second.due_date.as_deref(), Some("2026-06-17"));
+
+        let listed = list_invoices(&pool).await.unwrap();
+        let first_again = listed.iter().find(|i| i.id == first.id).unwrap();
+        assert_eq!(first_again.due_date.as_deref(), Some("2026-05-18"));
+    }
+
+    #[tokio::test]
+    async fn a_converted_estimate_gets_a_due_date_too() {
+        let pool = fresh_pool().await;
+
+        let estimate = save_estimate(
+            &pool,
+            DocumentInput {
+                status: Some("envoye".into()),
+                ..input("2026-04-18T10:00:00Z", None)
+            },
+        )
+        .await
+        .unwrap();
+
+        let invoice = convert_estimate(&pool, estimate.id, Some(30)).await.unwrap();
+
+        assert!(invoice.due_date.is_some(), "la facture issue d'un devis porte une échéance");
+        assert!(invoice.invoice_number.starts_with("FAC-"));
+    }
 }

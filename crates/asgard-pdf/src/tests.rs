@@ -55,6 +55,7 @@ fn coffee_invoice() -> Document {
         tva_rate: dec!(5.5),
         amount_tva: dec!(79.77),
         amount_total: dec!(1530.12),
+        due_date: Some(CivilDate::new(2026, 5, 18)),
         date: CivilDate::new(2026, 4, 18),
     }
 }
@@ -247,12 +248,25 @@ fn prints_everything_the_javascript_version_printed() {
     assert!(!expected.is_empty(), "la référence doit contenir du texte");
 
     for fragment in &expected {
+        if REPLACED_BY_A_DATED_DUE_DATE.iter().any(|old| fragment.starts_with(old)) {
+            continue;
+        }
         assert!(
             ours.contains(fragment.as_str()),
             "fragment absent du PDF produit : {fragment:?}\n---\nproduit : {ours}"
         );
     }
+
+    // L'écart est unique, et il ajoute : la phrase annonçait un délai sans
+    // jamais nommer de date. Ce qu'elle portait — virement, IBAN — se retrouve
+    // dans la nouvelle, avec l'échéance en plus.
+    assert!(ours.contains("Mode de règlement : Virement bancaire. Échéance : 18/05/2026."));
+    assert!(ours.contains("IBAN : FR76 3000 2000 0001 2345 6789 012"));
 }
+
+/// Seule phrase du PDF de référence que le port ne reproduit plus mot pour mot.
+const REPLACED_BY_A_DATED_DUE_DATE: [&str; 1] =
+    ["Mode de règlement : Virement bancaire sous 30 jours."];
 
 #[test]
 fn prints_the_estimate_signature_block() {
@@ -338,21 +352,73 @@ fn amounts_always_carry_two_decimals() {
 
 #[test]
 fn legal_notices_match_the_javascript_wording() {
-    let invoice = legal_notice(DocumentKind::Invoice, dec!(20), "FR76 1234");
+    let due = Some(CivilDate::new(2026, 5, 18));
+    let invoice = legal_notice(DocumentKind::Invoice, dec!(20), "FR76 1234", due);
     assert!(invoice.contains("Dispensé d'immatriculation au registre du commerce"));
     assert!(invoice.contains("IBAN : FR76 1234"));
     assert!(!invoice.contains("293 B"));
 
-    let exempt = legal_notice(DocumentKind::Invoice, dec!(0), "");
+    let exempt = legal_notice(DocumentKind::Invoice, dec!(0), "", due);
     assert!(exempt.starts_with("TVA non applicable, article 293 B du CGI."));
     assert!(
         exempt.contains("FR76 0000 0000 0000 0000 0000 000"),
         "un IBAN absent retombe sur le gabarit, comme en JavaScript"
     );
 
-    let estimate = legal_notice(DocumentKind::Estimate, dec!(20), "FR76 1234");
+    let estimate = legal_notice(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
     assert!(estimate.contains("valable pour une durée de 3 mois"));
     assert!(estimate.contains("Bon pour accord"));
+}
+
+/// Mentions obligatoires entre professionnels. Elles manquaient depuis
+/// l'origine : la version JavaScript ne les imprimait pas non plus, et leur
+/// absence est sanctionnable.
+#[test]
+fn an_invoice_carries_the_mandatory_late_payment_terms() {
+    let notice = legal_notice(
+        DocumentKind::Invoice,
+        dec!(20),
+        "FR76 1234",
+        Some(CivilDate::new(2026, 5, 18)),
+    );
+
+    assert!(notice.contains("Échéance : 18/05/2026"));
+    assert!(notice.contains("trois fois l'intérêt légal"));
+    assert!(notice.contains("indemnité forfaitaire pour frais de recouvrement de 40 €"));
+    assert!(notice.contains("Escompte pour paiement anticipé : néant"));
+
+    // Un devis n'annonce ni échéance ni pénalités : il ne fait pas naître de
+    // créance.
+    let estimate = legal_notice(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
+    assert!(!estimate.contains("40 €"));
+    assert!(!estimate.contains("Échéance"));
+}
+
+/// Une facture d'avant l'enregistrement des échéances conserve la formule
+/// générale : inventer une date sur une pièce déjà émise serait pire.
+#[test]
+fn an_invoice_without_a_recorded_due_date_keeps_the_former_wording() {
+    let notice = legal_notice(DocumentKind::Invoice, dec!(20), "FR76 1234", None);
+
+    assert!(notice.contains("Virement bancaire sous 30 jours"));
+    assert!(!notice.contains("Échéance :"));
+    // Les pénalités, elles, ne dépendent pas de l'échéance.
+    assert!(notice.contains("40 €"));
+}
+
+#[test]
+fn the_due_date_is_printed_next_to_the_issue_date() {
+    let pdf = render(
+        DocumentKind::Invoice,
+        &coffee_invoice(),
+        &coffee_client(),
+        &issuer(),
+        generated_at(),
+    )
+    .unwrap();
+
+    let text = extract_text(&pdf).join(" | ");
+    assert!(text.contains("Échéance : 18/05/2026"), "texte produit : {text}");
 }
 
 #[test]

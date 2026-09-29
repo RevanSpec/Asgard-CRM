@@ -143,6 +143,13 @@ async fn load(pool: &SqlitePool, kind: Kind, id: i64) -> Result<(Document, Party
         amount_tva: from_cents(row.get("amount_tva_cents")),
         amount_total: from_cents(row.get("amount_total_cents")),
         date: CivilDate::parse(&date).unwrap_or(CivilDate::new(1970, 1, 1)),
+        // Les devis n'ont pas de colonne d'échéance ; les factures d'avant la
+        // migration 0002 l'ont nulle.
+        due_date: row
+            .try_get::<Option<String>, _>("due_date")
+            .ok()
+            .flatten()
+            .and_then(|iso| CivilDate::parse(&iso)),
     };
 
     let client = Party {

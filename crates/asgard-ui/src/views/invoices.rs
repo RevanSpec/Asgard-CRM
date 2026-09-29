@@ -7,7 +7,7 @@ use leptos::prelude::*;
 
 use super::documents::{self, can_remind, invoice_status_badge, type_badge};
 use super::icons;
-use super::modals::open_email;
+use super::modals::{open_email, Outgoing};
 use super::widgets::{EmptyState, GoldButton, IconButton, Modal, SearchBox, SelectField, TextArea, TextField};
 use crate::state::{use_app, App, Pending, PaymentForm};
 use crate::templates::Kind;
@@ -249,13 +249,16 @@ pub(super) fn email_invoice(app: App, inv: &Invoice, kind: Kind) {
     open_email(
         app,
         kind,
-        inv.id,
-        inv.invoice_number.clone(),
-        inv.description.clone(),
-        inv.amount_total,
-        inv.date.clone(),
-        inv.client_id,
-        inv.company_name.clone(),
+        Outgoing {
+            id: inv.id,
+            number: inv.invoice_number.clone(),
+            description: inv.description.clone(),
+            total: inv.amount_total,
+            date: inv.date.clone(),
+            due_date: inv.due_date.clone(),
+            client_id: inv.client_id,
+            company: inv.company_name.clone(),
+        },
     );
 }
 
@@ -308,6 +311,7 @@ pub(super) fn CreateForm(open: RwSignal<bool>) -> impl IntoView {
             amount_ht: validation::parse_amount(&amount.get()).unwrap_or_default(),
             tva_rate: validation::parse_amount(&tva.get()).unwrap_or_default(),
             date: format!("{}T00:00:00Z", super::modals::today_iso()),
+            payment_terms_days: Some(crate::settings::load().payment_terms_days),
             status: None,
         };
 

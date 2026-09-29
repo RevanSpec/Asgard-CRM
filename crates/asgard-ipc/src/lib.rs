@@ -55,6 +55,10 @@ pub struct Invoice {
     pub amount_tva: f64,
     pub amount_total: f64,
     pub date: String,
+    /// Date à laquelle le règlement doit intervenir. Absente sur les factures
+    /// émises avant que l'échéance ne soit enregistrée.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub due_date: Option<String>,
     pub status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub payment_date: Option<String>,
@@ -109,6 +113,10 @@ pub struct DocumentInput {
     pub amount_ht: f64,
     pub tva_rate: f64,
     pub date: String,
+    /// Délai de règlement en jours, tel que les réglages l'annoncent. L'hôte en
+    /// déduit l'échéance et l'enregistre : une facture émise ne bouge plus.
+    #[serde(default)]
+    pub payment_terms_days: Option<u32>,
     #[serde(default)]
     pub status: Option<String>,
 }

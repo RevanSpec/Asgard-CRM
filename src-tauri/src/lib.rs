@@ -132,8 +132,12 @@ async fn delete_estimate(db: tauri::State<'_, Db>, id: i64) -> Result<DeleteOutc
 }
 
 #[tauri::command]
-async fn convert_estimate(db: tauri::State<'_, Db>, id: i64) -> Result<Invoice, DbError> {
-    repo::convert_estimate(&db.pool, id).await
+async fn convert_estimate(
+    db: tauri::State<'_, Db>,
+    id: i64,
+    payment_terms_days: Option<u32>,
+) -> Result<Invoice, DbError> {
+    repo::convert_estimate(&db.pool, id, payment_terms_days).await
 }
 
 #[tauri::command]
