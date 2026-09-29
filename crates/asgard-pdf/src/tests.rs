@@ -362,14 +362,47 @@ fn legal_notices_match_the_javascript_wording() {
 
     let exempt = legal_notice(DocumentKind::Invoice, dec!(0), "", due);
     assert!(exempt.starts_with("TVA non applicable, article 293 B du CGI."));
+    // Écart assumé avec le JavaScript, et seul écart de cette fonction :
+    // l'original imprimait `FR76 0000 0000 0000 0000 0000 000` quand l'IBAN
+    // manquait. Le client était alors invité à virer sur un compte qui
+    // n'existe pas. La mention disparaît au lieu d'être inventée.
     assert!(
-        exempt.contains("FR76 0000 0000 0000 0000 0000 000"),
-        "un IBAN absent retombe sur le gabarit, comme en JavaScript"
+        !exempt.contains("FR76 0000"),
+        "aucun IBAN de gabarit ne doit être imprimé : {exempt}"
     );
+    assert!(!exempt.contains("IBAN"), "pas de mention d'IBAN sans IBAN : {exempt}");
+    assert!(exempt.contains("Mode de règlement : Virement bancaire. Échéance : 18/05/2026."));
 
     let estimate = legal_notice(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
     assert!(estimate.contains("valable pour une durée de 3 mois"));
     assert!(estimate.contains("Bon pour accord"));
+}
+
+/// Défaut D11 : aucune pièce ne doit sortir avec une identité que l'émetteur
+/// n'a pas saisie. Le garde est ici plutôt que dans l'hôte pour être testable
+/// sans base de données, et pour valoir quel que soit l'appelant.
+#[test]
+fn an_issuer_without_identity_cannot_edit_a_document() {
+    assert!(issuer().missing_fields(DocumentKind::Invoice).is_empty());
+
+    let nothing = Issuer::default();
+    assert_eq!(
+        nothing.missing_fields(DocumentKind::Invoice),
+        vec!["la raison sociale", "l'adresse", "le SIRET", "l'IBAN"]
+    );
+
+    // Un devis ne demande pas de règlement : l'IBAN n'y est pas exigé, et il
+    // n'y est pas imprimé non plus.
+    assert_eq!(
+        nothing.missing_fields(DocumentKind::Estimate),
+        vec!["la raison sociale", "l'adresse", "le SIRET"]
+    );
+    // Un avoir non plus : il rend de l'argent, il n'en réclame pas.
+    assert!(!nothing.missing_fields(DocumentKind::CreditNote).contains(&"l'IBAN"));
+
+    // Des espaces ne remplissent rien.
+    let blank = Issuer { siret: "   ".into(), ..issuer() };
+    assert_eq!(blank.missing_fields(DocumentKind::Invoice), vec!["le SIRET"]);
 }
 
 /// Mentions obligatoires entre professionnels. Elles manquaient depuis

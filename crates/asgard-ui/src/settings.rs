@@ -48,15 +48,26 @@ pub struct Settings {
 }
 
 impl Default for Settings {
+    /// **Aucune identité par défaut.**
+    ///
+    /// Ces champs décrivaient jusqu'ici une société fictive — « Asgard
+    /// Solutions », un SIRET et un IBAN d'apparence crédible. Rien à l'écran ne
+    /// signalait qu'ils n'étaient pas ceux de l'utilisateur : une facture émise
+    /// avant d'avoir ouvert les réglages partait au nom de quelqu'un d'autre,
+    /// vers un compte inexistant (défaut D11). L'écran d'accueil les demande
+    /// désormais au premier lancement, et l'hôte refuse d'éditer sans eux.
+    ///
+    /// Ce qui garde une valeur par défaut est ce qui n'engage personne : délai
+    /// de règlement, taux de cotisation, couleur, gabarits de message.
     fn default() -> Self {
         Self {
-            company_name: "Asgard Solutions".into(),
-            contact_name: "Thor Odinson".into(),
-            email: "thor@asgard-solutions.fr".into(),
-            phone: "06 12 34 56 78".into(),
-            address: "1 Rue du Valhalla, 75008 Paris".into(),
-            siret: "839 204 123 00019".into(),
-            iban: "FR76 3000 2000 0001 2345 6789 012".into(),
+            company_name: String::new(),
+            contact_name: String::new(),
+            email: String::new(),
+            phone: String::new(),
+            address: String::new(),
+            siret: String::new(),
+            iban: String::new(),
 
             payment_terms_days: 30,
 
@@ -99,10 +110,97 @@ pub fn load() -> Settings {
     serde_json::from_str(&raw).unwrap_or_default()
 }
 
+/// Enregistre les réglages : le cache tout de suite, la base ensuite.
+///
+/// Le `localStorage` est écrit sur place parce que l'interface lit les réglages
+/// pendant le rendu, sans pouvoir attendre l'hôte. La base est écrite en
+/// arrière-plan : c'est elle que la copie quotidienne emporte (défaut D13).
 pub fn save(settings: &Settings) {
-    let Some(storage) = storage() else { return };
     let Ok(json) = serde_json::to_string(settings) else { return };
-    let _ = storage.set_item(STORAGE_KEY, &json);
+    cache(&json);
+    queue_host_write(json);
+}
+
+/// Adopte les réglages que la base vient de rendre.
+///
+/// Au démarrage, la base fait foi : elle a été sauvegardée, le cache non. Un
+/// JSON illisible est ignoré plutôt qu'écrit — il vaut mieux repartir des
+/// valeurs par défaut que d'installer un cache que personne ne saura relire.
+pub fn adopt(json: &str) {
+    if serde_json::from_str::<Settings>(json).is_ok() {
+        cache(json);
+    }
+}
+
+/// Envoie à l'hôte ce que le cache contient, si tant est qu'il contienne
+/// quelque chose.
+///
+/// C'est la reprise des installations existantes : leurs réglages n'ont jamais
+/// vu la base. Même geste que la migration du mot de passe SMTP vers le
+/// trousseau en phase 1 — lire l'ancien emplacement, écrire le nouveau.
+pub fn adopt_cache_into_database() {
+    let Some(storage) = storage() else { return };
+    let Ok(Some(json)) = storage.get_item(STORAGE_KEY) else { return };
+
+    queue_host_write(json);
+}
+
+fn cache(json: &str) {
+    let Some(storage) = storage() else { return };
+    let _ = storage.set_item(STORAGE_KEY, json);
+}
+
+/// Écriture vers l'hôte : au plus une en cours, la plus récente en attente.
+///
+/// L'écran Paramètres enregistre à **chaque frappe**. Lancer autant d'écritures
+/// concurrentes ne garantirait pas leur ordre d'arrivée en base, et la valeur
+/// affichée pourrait ne pas être celle enregistrée. Une frappe qui survient
+/// pendant une écriture remplace donc celle qui attendait : la dernière valeur
+/// gagne, et une rafale ne coûte que deux écritures.
+struct Queue {
+    writing: bool,
+    pending: Option<String>,
+}
+
+thread_local! {
+    static QUEUE: std::cell::RefCell<Queue> =
+        const { std::cell::RefCell::new(Queue { writing: false, pending: None }) };
+}
+
+fn queue_host_write(json: String) {
+    let begin = QUEUE.with_borrow_mut(|queue| {
+        queue.pending = Some(json);
+        let idle = !queue.writing;
+        queue.writing = true;
+        idle
+    });
+
+    if !begin {
+        return;
+    }
+
+    leptos::task::spawn_local(async move {
+        while let Some(json) = QUEUE.with_borrow_mut(|queue| queue.pending.take()) {
+            #[derive(Serialize)]
+            struct Args {
+                json: String,
+            }
+
+            if let Err(error) = crate::ipc::invoke::<_, ()>("save_stored_settings", &Args { json }).await
+            {
+                // Le parcours de l'application échoue sur toute erreur de
+                // console : une écriture perdue se voit donc en intégration
+                // continue, au lieu de passer inaperçue jusqu'à la sauvegarde
+                // suivante.
+                web_sys::console::error_1(
+                    &format!("Réglages non enregistrés en base : {error}").into(),
+                );
+                break;
+            }
+        }
+
+        QUEUE.with_borrow_mut(|queue| queue.writing = false);
+    });
 }
 
 /// Retire un mot de passe SMTP qui traînerait encore en clair.
@@ -138,6 +236,32 @@ mod tests {
         assert_eq!(settings.smtp_host, "127.0.0.1");
         assert_eq!(settings.smtp_port, "1025");
         assert_eq!(settings.custom_color, "#E5A93C");
+    }
+
+    /// Défaut D11. Ce test tomberait si une identité revenait un jour dans les
+    /// valeurs par défaut — et c'est bien ce qu'on veut : une facture ne doit
+    /// jamais pouvoir sortir au nom d'une société que l'utilisateur n'a pas
+    /// saisie.
+    #[test]
+    fn the_default_identity_is_empty() {
+        let settings = Settings::default();
+
+        for (field, value) in [
+            ("companyName", &settings.company_name),
+            ("contactName", &settings.contact_name),
+            ("email", &settings.email),
+            ("phone", &settings.phone),
+            ("address", &settings.address),
+            ("siret", &settings.siret),
+            ("iban", &settings.iban),
+        ] {
+            assert!(value.is_empty(), "{field} ne doit pas avoir de valeur par défaut : « {value} »");
+        }
+
+        // Ce qui n'engage personne garde la sienne.
+        assert_eq!(settings.payment_terms_days, 30);
+        assert_eq!(settings.custom_color, "#E5A93C");
+        assert!(settings.email_template_invoice.contains("Bonjour"));
     }
 
     /// Une sauvegarde partielle doit se relire : `#[serde(default)]` complète

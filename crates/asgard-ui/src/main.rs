@@ -88,28 +88,44 @@ fn Root() -> impl IntoView {
     settings::strip_legacy_password();
 
     leptos::task::spawn_local(async move {
-        app.reload().await;
+        app.bootstrap().await;
     });
 
     view! {
         <div class="app-container">
-            <views::Sidebar />
-            <main class="main-content">
-                <Show
-                    when=move || !app.loading.get()
-                    fallback=|| view! { <p class="metric-subtext">"Chargement…"</p> }
-                >
-                    {move || match app.tab.get() {
-                        Tab::Dashboard => views::dashboard().into_any(),
-                        Tab::Clients => views::clients().into_any(),
-                        Tab::Invoices => views::invoices().into_any(),
-                        Tab::Estimates => views::estimates().into_any(),
-                        Tab::Expenses => views::expenses().into_any(),
-                        Tab::Compta => views::compta().into_any(),
-                        Tab::Settings => views::settings().into_any(),
-                    }}
+            // Rien n'est décidé tant que l'hôte n'a pas répondu : une
+            // installation neuve ouvre l'accueil, les autres l'application. La
+            // barre latérale n'apparaît donc qu'après le chargement — l'afficher
+            // avant, puis l'effacer au profit de l'accueil, ferait clignoter
+            // l'écran et rendrait l'état de l'interface ambigu.
+            <Show
+                when=move || !app.loading.get()
+                fallback=|| {
+                    view! {
+                        <main class="main-content">
+                            <p class="metric-subtext">"Chargement…"</p>
+                        </main>
+                    }
+                }
+            >
+                // Sur une installation neuve, l'accueil remplace l'application :
+                // ni barre latérale, ni écrans — il n'y a rien à y voir avant
+                // que l'identité de l'émetteur soit connue (défaut D11).
+                <Show when=move || !app.first_run.get() fallback=|| views::onboarding()>
+                    <views::Sidebar />
+                    <main class="main-content">
+                        {move || match app.tab.get() {
+                            Tab::Dashboard => views::dashboard().into_any(),
+                            Tab::Clients => views::clients().into_any(),
+                            Tab::Invoices => views::invoices().into_any(),
+                            Tab::Estimates => views::estimates().into_any(),
+                            Tab::Expenses => views::expenses().into_any(),
+                            Tab::Compta => views::compta().into_any(),
+                            Tab::Settings => views::settings().into_any(),
+                        }}
+                    </main>
                 </Show>
-            </main>
+            </Show>
             <views::NoticeModal />
             <views::ConfirmModal />
             <views::EmailModal />

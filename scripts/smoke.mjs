@@ -7,6 +7,11 @@
 // simule **aucune entrée souris ou clavier** : tout passe par la page, donc
 // rien ne peut atterrir dans une autre fenêtre du bureau.
 //
+// Sur une base vierge — le cas en intégration continue — l'application s'ouvre
+// sur l'accueil du premier lancement : le parcours le remplit, après avoir
+// vérifié qu'il refuse de s'effacer sans identité. Sur une base déjà en service,
+// ces deux étapes n'ont pas lieu d'être et sont passées.
+//
 // Pourquoi ce script existe : ni le compilateur ni les tests unitaires ne
 // voient une interface qui se fige. Un appel de contexte Leptos hors rendu a
 // paniqué au clic sur « Nouvelle Facture », et seule l'exécution de
@@ -224,6 +229,12 @@ const HELPERS = `
       field.dispatchEvent(new Event(field.tagName === 'SELECT' ? 'change' : 'input', { bubbles: true }));
       return field.value;
     },
+    value(label) {
+      const group = [...document.querySelectorAll('.form-group')]
+        .find((g) => g.querySelector('.form-label')?.textContent.trim() === label);
+      if (!group) throw new Error('champ introuvable : ' + label);
+      return group.querySelector('input, textarea, select').value;
+    },
     optionContaining(label, needle) {
       const group = [...document.querySelectorAll('.form-group')]
         .find((g) => g.querySelector('.form-label')?.textContent.trim() === label);
@@ -297,11 +308,69 @@ const goto = async (tab) => {
 await send('Page.enable');
 await send('Runtime.enable');
 await send('Log.enable');
-await until(`document.querySelector('.sidebar') !== null`, 'démarrage de l’interface', 30_000);
+
+// Deux ouvertures possibles. Une base vierge — le cas en intégration continue —
+// s'ouvre sur l'accueil du premier lancement ; une base déjà en service s'ouvre
+// directement sur l'application.
+//
+// L'attente porte donc sur les deux, **et** sur la fin du chargement : tant que
+// l'hôte n'a pas répondu, ni l'un ni l'autre n'est affiché, et trancher avant
+// reviendrait à jouer à pile ou face — un runner froid répondant plus lentement
+// qu'un poste de travail.
+const WELCOME = 'Bienvenue dans Asgard CRM';
+await until(
+  `document.querySelector('.sidebar') !== null || document.body.innerText.includes(${JSON.stringify(WELCOME)})`,
+  'démarrage de l’interface',
+  30_000,
+);
 await ev(HELPERS);
-await until(`!document.body.innerText.includes('Chargement')`, 'chargement des données', 20_000);
+
+const welcoming = await ev(`document.body.innerText.includes(${JSON.stringify(WELCOME)})`);
 
 console.log('Parcours :');
+
+const IDENTITY = {
+  "Nom de l'entreprise": 'Forge du Valhalla',
+  'Adresse professionnelle': '1 rue du Bifrost, 75011 Paris',
+  SIRET: '839 204 123 00019',
+  'IBAN bancaire (Règlement)': 'FR76 3000 2000 0001 2345 6789 012',
+};
+
+if (welcoming) {
+  // Le défaut D11 tenait à ce que rien n'exigeait cette identité : les réglages
+  // en livraient une, fictive et crédible, et la facture sortait au nom d'une
+  // société inventée. L'accueil doit donc refuser de s'effacer tant qu'elle
+  // manque.
+  await step("l'accueil refuse de commencer sans identité", async () => {
+    for (const label of Object.keys(IDENTITY)) await ev(`__t.fill(${JSON.stringify(label)}, '')`);
+    await ev(`__t.click('button', 'Commencer')`);
+    await until(`document.querySelector('.error-text') !== null`, 'refus affiché', 3000);
+    const refusal = await ev(`__t.flat(document.querySelector('.error-text').textContent)`);
+    if (!refusal.includes('le SIRET')) throw new Error(`refus peu explicite : ${refusal}`);
+    if (await ev(`document.querySelector('.sidebar') !== null`)) {
+      throw new Error("l'application s'est ouverte malgré une identité absente");
+    }
+    return refusal;
+  });
+
+  await step("remplir l'accueil, avec le jeu d'exemple", async () => {
+    for (const [label, value] of Object.entries(IDENTITY)) {
+      await ev(`__t.fill(${JSON.stringify(label)}, ${JSON.stringify(value)})`);
+    }
+    await shot('accueil');
+    await ev(`__t.click('button', 'exemple')`);
+    await until(`document.querySelector('.sidebar') !== null`, "ouverture de l'application", 20_000);
+    await ev(HELPERS);
+    // Le jeu d'exemple est semé par l'hôte pendant que l'écran bascule : les
+    // étapes suivantes en dépendent, donc on attend de le voir plutôt que de
+    // supposer qu'il est arrivé.
+    await goto('Clients');
+    await until(`__t.rows().length >= 3`, "jeu d'exemple chargé", 15_000);
+    return `${IDENTITY.SIRET}, ${await ev('__t.rows().length')} clients d'exemple`;
+  });
+}
+
+await until(`!document.body.innerText.includes('Chargement')`, 'chargement des données', 20_000);
 
 const SCREENS = [
   ['Dashboard', 'Tableau de bord'],
@@ -496,6 +565,31 @@ await step('les cotisations suivent le réglage ACRE', async () => {
   if (full === reduced) throw new Error(`les cotisations n'ont pas bougé : ${full}`);
   if (full !== restored) throw new Error(`valeur non rétablie : ${full} puis ${restored}`);
   return `${full} → ${reduced} → ${full}`;
+});
+
+// L'autre moitié du garde : l'hôte refuse d'éditer une pièce dont l'émetteur est
+// incomplet. Le sélecteur de fichier n'apparaît jamais — le refus est rendu
+// avant lui — donc ce parcours peut l'exercer sans rester bloqué sur une
+// fenêtre du système.
+await step("aucune facture n'est éditée sans SIRET", async () => {
+  await goto('Paramètres');
+  const kept = await ev(`__t.value('SIRET')`);
+  await ev(`__t.fill('SIRET', '')`);
+  await wait(600);
+
+  await goto('Factures');
+  await ev(`__t.clickInRow('FAC-', 'Télécharger le PDF')`);
+  await until(`__t.modal()?.includes('le SIRET')`, 'refus faute de SIRET');
+  const refusal = await ev(`__t.flat(__t.modal())`);
+  await ev(`__t.click('.modal-footer .btn-primary', 'OK')`);
+  await until(`__t.modal() === null`, 'fermeture');
+
+  await goto('Paramètres');
+  await ev(`__t.fill('SIRET', ${JSON.stringify(kept)})`);
+  await wait(600);
+  if ((await ev(`__t.value('SIRET')`)) !== kept) throw new Error('SIRET non rétabli');
+  if (!refusal.includes('Paramètres')) throw new Error(`refus sans indication : ${refusal}`);
+  return refusal.slice(0, 120);
 });
 
 // ------------------------------------------------------------------ verdict

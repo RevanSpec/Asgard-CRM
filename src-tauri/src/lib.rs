@@ -189,6 +189,43 @@ fn database_path(db: tauri::State<'_, Db>) -> String {
     db.path.to_string_lossy().to_string()
 }
 
+// -------------------------------------------------- reglages et accueil
+//
+// Les reglages vivaient dans le localStorage de la WebView, qu'aucune sauvegarde
+// automatique ne couvre (defaut D13). La base fait desormais foi.
+
+/// Réglages enregistrés, et état du premier lancement.
+#[tauri::command]
+async fn load_stored_settings(db: tauri::State<'_, Db>) -> Result<StoredSettings, DbError> {
+    db::settings::load(&db.pool).await
+}
+
+/// Enregistre les réglages tels que l'interface les sérialise.
+#[tauri::command]
+async fn save_stored_settings(db: tauri::State<'_, Db>, json: String) -> Result<(), DbError> {
+    db::settings::save(&db.pool, &json).await
+}
+
+/// Clôt le premier lancement, en semant le jeu d'exemple si l'utilisateur l'a
+/// demandé.
+///
+/// Le semis était jusqu'ici fait au démarrage, sans rien demander : une base
+/// vierge recevait trois clients fictifs, des factures, des devis et des
+/// dépenses — et ces factures **consommaient la séquence réglementaire**, si
+/// bien que la première facture réelle ne portait pas le numéro 1 (défaut D12).
+/// C'est désormais un choix, fait une fois.
+#[tauri::command]
+async fn complete_first_run(db: tauri::State<'_, Db>, seed_demo: bool) -> Result<bool, DbError> {
+    let seeded = if seed_demo {
+        db::seed_demo_data_if_empty(&db.pool).await?
+    } else {
+        false
+    };
+
+    db::settings::mark_first_run_done(&db.pool).await?;
+    Ok(seeded)
+}
+
 
 // ------------------------------------------------------------ calculs metier
 //
@@ -393,7 +430,9 @@ pub fn run() {
             // sans base, aucune commande de données ne peut répondre.
             let opened = tauri::async_runtime::block_on(async move {
                 let db = db::open(data_dir.clone()).await?;
-                db::seed_demo_data_if_empty(&db.pool).await?;
+                // Plus de jeu de démonstration ici : il est semé par
+                // `complete_first_run`, si l'utilisateur le demande à l'accueil
+                // (défaut D12).
 
                 // Copie du jour, par roulement. Son échec ne doit pas empêcher
                 // d'ouvrir l'application : perdre une copie est ennuyeux, ne
@@ -456,6 +495,9 @@ pub fn run() {
             import_backup,
             backup_to_file,
             database_path,
+            load_stored_settings,
+            save_stored_settings,
+            complete_first_run,
             dashboard,
             urssaf_declaration,
             recettes_csv,

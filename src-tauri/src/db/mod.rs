@@ -17,6 +17,7 @@ pub mod money;
 pub mod numbering;
 pub mod repo;
 pub(crate) mod seed;
+pub mod settings;
 
 use std::path::PathBuf;
 
@@ -44,6 +45,15 @@ pub enum DbError {
 
     #[error("Édition du PDF impossible : {0}")]
     Pdf(String),
+
+    /// Refus d'éditer une pièce faute d'identité. Ce n'est pas une panne : la
+    /// demande est légitime, mais l'application n'a pas de quoi y répondre
+    /// honnêtement (défaut D11).
+    #[error(
+        "Vos informations d'entreprise sont incomplètes : il manque {0}. \
+         Renseignez-les dans l'onglet « Paramètres » avant d'éditer une pièce."
+    )]
+    Incomplete(String),
 }
 
 /// Les commandes Tauri renvoient des erreurs sérialisables.
@@ -111,6 +121,7 @@ mod tests {
         assert_eq!(
             tables,
             vec![
+                "app_settings",
                 "clients",
                 "credit_notes",
                 "document_sequences",

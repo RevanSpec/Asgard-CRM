@@ -47,25 +47,32 @@ pub struct IssuerInput {
 }
 
 impl From<IssuerInput> for Issuer {
+    /// Les champs traversent tels quels.
+    ///
+    /// L'ancienne conversion remplaçait une raison sociale vide par « Mon
+    /// Auto-Entreprise », une adresse vide par « Votre Adresse » : la pièce
+    /// sortait, au nom de personne, et rien à l'écran ne l'en distinguait
+    /// (défaut D11). Un champ vide reste vide, et `render` refuse alors
+    /// d'éditer.
+    ///
+    /// Seule la couleur d'accentuation garde un repli : un trait doit bien être
+    /// tracé dans une teinte, et celle-là n'engage rien.
     fn from(input: IssuerInput) -> Self {
-        let default = Issuer::default();
-        let or_default = |value: String, fallback: String| {
-            if value.trim().is_empty() {
-                fallback
-            } else {
-                value
-            }
-        };
+        let colour = input.custom_color.trim();
 
         Issuer {
-            company_name: or_default(input.company_name, default.company_name),
-            contact_name: or_default(input.contact_name, default.contact_name),
-            address: or_default(input.address, default.address),
-            phone: or_default(input.phone, default.phone),
-            email: or_default(input.email, default.email),
+            company_name: input.company_name,
+            contact_name: input.contact_name,
+            address: input.address,
+            phone: input.phone,
+            email: input.email,
             siret: input.siret,
             iban: input.iban,
-            accent_colour: or_default(input.custom_color, default.accent_colour),
+            accent_colour: if colour.is_empty() {
+                asgard_pdf::DEFAULT_ACCENT.to_string()
+            } else {
+                colour.to_string()
+            },
             logo: input.logo_base64,
         }
     }
@@ -190,6 +197,14 @@ pub async fn render(
     id: i64,
     issuer: Issuer,
 ) -> Result<Rendered, DbError> {
+    // Refus avant même de lire la pièce : ce qui manque n'est pas la facture,
+    // c'est l'émetteur. Le garde est ici plutôt que dans chaque commande, parce
+    // que l'édition et l'envoi par e-mail passent tous deux par cette fonction.
+    let missing = issuer.missing_fields(kind.document_kind());
+    if !missing.is_empty() {
+        return Err(DbError::Incomplete(missing.join(", ")));
+    }
+
     let (document, client) = load(pool, kind, id).await?;
     let number = document.number.clone();
 
@@ -240,14 +255,34 @@ mod tests {
         assert_eq!(Kind::Reminder.table(), "invoices");
     }
 
+    /// Défaut D11 : un champ vide reste vide. Ce test remplace celui qui
+    /// vérifiait le contraire — « Mon Auto-Entreprise » et « Votre Adresse »
+    /// étaient imprimés sur de vraies factures.
     #[test]
-    fn issuer_fields_fall_back_when_blank() {
+    fn issuer_fields_stay_empty_when_blank() {
         let input: IssuerInput = serde_json::from_str(r#"{"siret": "123"}"#).unwrap();
         let issuer: Issuer = input.into();
 
-        assert_eq!(issuer.company_name, "Mon Auto-Entreprise");
-        assert_eq!(issuer.accent_colour, "#E5A93C");
+        assert_eq!(issuer.company_name, "");
+        assert_eq!(issuer.address, "");
         assert_eq!(issuer.siret, "123");
+
+        // La couleur, elle, garde son repli : elle n'engage rien.
+        assert_eq!(issuer.accent_colour, "#E5A93C");
+    }
+
+    /// Ce que l'interface doit afficher quand les réglages sont incomplets.
+    #[test]
+    fn an_incomplete_issuer_names_what_is_missing() {
+        let input: IssuerInput = serde_json::from_str(r#"{"companyName": "Gjallarhorn SARL"}"#).unwrap();
+        let missing = Issuer::from(input).missing_fields(DocumentKind::Invoice);
+
+        assert_eq!(missing, vec!["l'adresse", "le SIRET", "l'IBAN"]);
+        assert_eq!(
+            DbError::Incomplete(missing.join(", ")).to_string(),
+            "Vos informations d'entreprise sont incomplètes : il manque l'adresse, le SIRET, \
+             l'IBAN. Renseignez-les dans l'onglet « Paramètres » avant d'éditer une pièce."
+        );
     }
 
     /// Le logo traverse la frontière : c'est ce qui manquait depuis la phase 4,
@@ -283,6 +318,9 @@ mod tests {
         let input: IssuerInput = serde_json::from_str(r#"{"companyName": "   "}"#).unwrap();
         let issuer: Issuer = input.into();
 
-        assert_eq!(issuer.company_name, "Mon Auto-Entreprise");
+        // La valeur n'est pas nettoyée — inutile — mais elle ne remplit rien.
+        assert!(issuer
+            .missing_fields(DocumentKind::Invoice)
+            .contains(&"la raison sociale"));
     }
 }
