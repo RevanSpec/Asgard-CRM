@@ -56,6 +56,7 @@ fn coffee_invoice() -> Document {
         amount_tva: dec!(79.77),
         amount_total: dec!(1530.12),
         due_date: Some(CivilDate::new(2026, 5, 18)),
+        corrects: None,
         date: CivilDate::new(2026, 4, 18),
     }
 }
@@ -419,6 +420,49 @@ fn the_due_date_is_printed_next_to_the_issue_date() {
 
     let text = extract_text(&pdf).join(" | ");
     assert!(text.contains("Échéance : 18/05/2026"), "texte produit : {text}");
+}
+
+/// Un avoir est une pièce à part : son cartouche, son total et ses mentions
+/// diffèrent d'une facture, et il nomme la facture qu'il corrige.
+#[test]
+fn a_credit_note_names_the_invoice_it_corrects() {
+    let mut document = coffee_invoice();
+    document.number = "AVO-ASGARDCOFF-2026-0001".into();
+    document.corrects = Some("FAC-ASGARDCOFF-2026-0003".into());
+    document.due_date = None;
+
+    let pdf = render(
+        DocumentKind::CreditNote,
+        &document,
+        &coffee_client(),
+        &issuer(),
+        generated_at(),
+    )
+    .unwrap();
+
+    let text = extract_text(&pdf).join(" | ");
+
+    assert!(text.contains("AVOIR"));
+    assert!(text.contains("N° Avoir :"));
+    assert!(text.contains("AVO-ASGARDCOFF-2026-0001"));
+    assert!(text.contains("Facture corrigée : FAC-ASGARDCOFF-2026-0003"));
+    // Un avoir est dû au client : il n'est pas « à payer ».
+    assert!(text.contains("TOTAL AVOIR (TTC) :"));
+    assert!(!text.contains("TOTAL NET À PAYER"));
+    // Ni créance, ni signature : pas de pénalités, pas de cadre.
+    assert!(!text.contains("40 €"));
+    assert!(!text.contains("Échéance"));
+    assert!(!text.contains("Bon pour accord"));
+    assert!(text.contains("annule ou corrige la facture"));
+}
+
+#[test]
+fn a_credit_note_carries_the_cgi_notice_when_exempt() {
+    let exempt = legal_notice(DocumentKind::CreditNote, dec!(0), "FR76 1234", None);
+    assert!(exempt.starts_with("TVA non applicable, article 293 B du CGI."));
+
+    let taxed = legal_notice(DocumentKind::CreditNote, dec!(20), "FR76 1234", None);
+    assert!(!taxed.contains("293 B"));
 }
 
 #[test]

@@ -26,6 +26,8 @@ use printpdf::*;
 pub enum DocumentKind {
     Invoice,
     Estimate,
+    /// Avoir : annule ou corrige une facture émise, qui ne se modifie pas.
+    CreditNote,
 }
 
 impl DocumentKind {
@@ -33,27 +35,41 @@ impl DocumentKind {
         self == DocumentKind::Invoice
     }
 
+    /// Une pièce qui constate une créance, ou son annulation : tout sauf un
+    /// devis. Le cadre de signature et la largeur du pied de page en dépendent.
+    fn is_binding(self) -> bool {
+        self != DocumentKind::Estimate
+    }
+
     fn banner(self) -> &'static str {
-        if self.is_invoice() {
-            "FACTURE"
-        } else {
-            "DEVIS"
+        match self {
+            DocumentKind::Invoice => "FACTURE",
+            DocumentKind::Estimate => "DEVIS",
+            DocumentKind::CreditNote => "AVOIR",
         }
     }
 
     fn number_label(self) -> &'static str {
-        if self.is_invoice() {
-            "N° Facture :"
-        } else {
-            "N° Devis :"
+        match self {
+            DocumentKind::Invoice => "N° Facture :",
+            DocumentKind::Estimate => "N° Devis :",
+            DocumentKind::CreditNote => "N° Avoir :",
         }
     }
 
     fn footer_noun(self) -> &'static str {
-        if self.is_invoice() {
-            "Facture"
-        } else {
-            "Devis"
+        match self {
+            DocumentKind::Invoice => "Facture",
+            DocumentKind::Estimate => "Devis",
+            DocumentKind::CreditNote => "Avoir",
+        }
+    }
+
+    /// Libellé du total. Un avoir n'est pas « à payer » : il est dû au client.
+    fn total_label(self) -> &'static str {
+        match self {
+            DocumentKind::CreditNote => "TOTAL AVOIR (TTC) :",
+            _ => "TOTAL NET À PAYER (TTC) :",
         }
     }
 }
@@ -72,6 +88,9 @@ pub struct Document {
     /// Échéance de règlement. Absente sur les factures émises avant qu'elle ne
     /// soit enregistrée, et sur les devis, qui n'en ont pas.
     pub due_date: Option<CivilDate>,
+    /// Numéro de la facture qu'un avoir corrige. La référence est obligatoire :
+    /// un avoir isolé ne se rattache à rien.
+    pub corrects: Option<String>,
 }
 
 /// Coordonnées du client destinataire.
@@ -259,6 +278,21 @@ pub fn legal_notice(
         // D441-5 du code de commerce. Leur absence est sanctionnable, et elles
         // manquaient depuis l'origine.
         notice.push_str(LATE_PAYMENT_TERMS);
+    } else if kind == DocumentKind::CreditNote {
+        if tva_rate.is_zero() {
+            notice.push_str("TVA non applicable, article 293 B du CGI.\n");
+        }
+        notice.push_str(
+            "Dispensé d'immatriculation au registre du commerce et des sociétés (RCS) et au répertoire des métiers (RM).\n",
+        );
+        // Un avoir ne fait pas naître de créance : ni échéance, ni pénalités.
+        // Il annonce ce qu'il corrige, et comment le montant revient au client.
+        notice.push_str(
+            "Le présent avoir annule ou corrige la facture mentionnée ci-dessus, à concurrence du montant indiqué.\n",
+        );
+        notice.push_str(
+            "Il est imputable sur une prochaine facture ou remboursé par virement, au choix du client.",
+        );
     } else {
         notice.push_str("Devis valable pour une durée de 3 mois à compter de la date d'émission.\n");
         notice.push_str(
@@ -347,6 +381,17 @@ pub fn render(
         false,
         NAVY,
     );
+    if let Some(invoice) = document.corrects.as_deref() {
+        canvas.text(
+            &format!("Facture corrigée : {invoice}"),
+            9.0,
+            PAGE_WIDTH - 20.0,
+            y + 18.0,
+            Align::Right,
+            true,
+            NAVY,
+        );
+    }
     // L'échéance est une mention obligatoire (art. L441-9 du code de commerce),
     // et le client la cherche ici, à côté de la date d'émission.
     if let Some(due) = document.due_date.filter(|_| kind.is_invoice()) {
@@ -403,7 +448,7 @@ pub fn render(
     canvas.text(&euros(document.amount_tva), 9.0, PAGE_WIDTH - 22.0, y + 6.0, Align::Right, false, NAVY);
 
     canvas.filled_rect(100.0, y + 12.0, PAGE_WIDTH - 120.0, 10.0, NAVY);
-    canvas.text("TOTAL NET À PAYER (TTC) :", 10.0, 135.0, y + 18.5, Align::Right, true, WHITE);
+    canvas.text(kind.total_label(), 10.0, 135.0, y + 18.5, Align::Right, true, WHITE);
     canvas.text(&euros(document.amount_total), 10.0, PAGE_WIDTH - 22.0, y + 18.5, Align::Right, true, accent);
 
     // 5. Mentions légales
@@ -411,7 +456,8 @@ pub fn render(
     canvas.text("MENTIONS LÉGALES & CONDITIONS", 8.0, 20.0, y, Align::Left, true, NAVY);
 
     let notice = legal_notice(kind, document.tva_rate, &issuer.iban, document.due_date);
-    let max_width = if kind.is_invoice() { PAGE_WIDTH - 40.0 } else { 95.0 };
+    // Le devis réserve la moitié droite au cadre de signature.
+    let max_width = if kind.is_binding() { PAGE_WIDTH - 40.0 } else { 95.0 };
 
     let mut line_y = y + 5.0;
     for paragraph in notice.split('\n') {
@@ -422,7 +468,7 @@ pub fn render(
     }
 
     // Cadre de signature, pour les devis seulement.
-    if !kind.is_invoice() {
+    if !kind.is_binding() {
         canvas.text(
             "Cadre Signature Client (Bon pour accord) :",
             7.0,

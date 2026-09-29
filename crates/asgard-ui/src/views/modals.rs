@@ -213,6 +213,7 @@ fn EmailForm(compose: EmailCompose) -> impl IntoView {
 fn email_title(kind: Kind) -> &'static str {
     match kind {
         Kind::Estimate => "Envoyer le devis par e-mail",
+        Kind::Credit => "Envoyer l'avoir par e-mail",
         Kind::Invoice | Kind::Reminder => "Envoyer la facture par e-mail",
     }
 }

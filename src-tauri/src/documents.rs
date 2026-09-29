@@ -76,12 +76,15 @@ pub enum Kind {
     Estimate,
     /// Une relance porte sur une facture : même document, autre message.
     Reminder,
+    /// Avoir sur une facture.
+    Credit,
 }
 
 impl Kind {
     pub fn document_kind(self) -> DocumentKind {
         match self {
             Kind::Estimate => DocumentKind::Estimate,
+            Kind::Credit => DocumentKind::CreditNote,
             _ => DocumentKind::Invoice,
         }
     }
@@ -89,6 +92,7 @@ impl Kind {
     fn table(self) -> &'static str {
         match self {
             Kind::Estimate => "estimates",
+            Kind::Credit => "credit_notes",
             _ => "invoices",
         }
     }
@@ -96,7 +100,16 @@ impl Kind {
     fn number_column(self) -> &'static str {
         match self {
             Kind::Estimate => "estimate_number",
+            Kind::Credit => "credit_number",
             _ => "invoice_number",
+        }
+    }
+
+    /// Un avoir nomme la facture qu'il corrige : elle se lit par une jointure.
+    fn corrected_invoice(self) -> (&'static str, &'static str) {
+        match self {
+            Kind::Credit => (", i.invoice_number AS corrects", "LEFT JOIN invoices i ON i.id = d.invoice_id"),
+            _ => ("", ""),
         }
     }
 }
@@ -121,9 +134,10 @@ pub struct Rendered {
 /// sur la pièce, et les autres champs retombent sur un libellé explicite —
 /// exactement ce que faisait le JavaScript.
 async fn load(pool: &SqlitePool, kind: Kind, id: i64) -> Result<(Document, Party), DbError> {
+    let (corrects_column, corrects_join) = kind.corrected_invoice();
     let row = sqlx::query(&format!(
-        "SELECT d.*, c.contact_name, c.address, c.phone, c.email
-         FROM {table} d LEFT JOIN clients c ON c.id = d.client_id
+        "SELECT d.*, c.contact_name, c.address, c.phone, c.email{corrects_column}
+         FROM {table} d LEFT JOIN clients c ON c.id = d.client_id {corrects_join}
          WHERE d.id = ?1 AND d.deleted_at IS NULL",
         table = kind.table()
     ))
@@ -150,6 +164,7 @@ async fn load(pool: &SqlitePool, kind: Kind, id: i64) -> Result<(Document, Party
             .ok()
             .flatten()
             .and_then(|iso| CivilDate::parse(&iso)),
+        corrects: row.try_get::<Option<String>, _>("corrects").ok().flatten(),
     };
 
     let client = Party {
@@ -213,6 +228,7 @@ mod tests {
 
     #[test]
     fn maps_document_kinds() {
+        assert_eq!(Kind::Credit.document_kind(), DocumentKind::CreditNote);
         assert_eq!(Kind::Invoice.document_kind(), DocumentKind::Invoice);
         assert_eq!(Kind::Estimate.document_kind(), DocumentKind::Estimate);
 

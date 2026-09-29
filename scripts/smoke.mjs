@@ -231,7 +231,8 @@ async function step(name, body) {
     await closeAnyModal();
     const detail = await body();
     results.push({ name, ok: true, detail });
-    console.log(`  ok   ${name}${detail ? ' — ' + String(detail).slice(0, 90) : ''}`);
+    const shown = typeof detail === 'object' && detail !== null ? JSON.stringify(detail) : String(detail ?? '');
+    console.log(`  ok   ${name}${shown ? ' — ' + shown.slice(0, 110) : ''}`);
   } catch (error) {
     results.push({ name, ok: false, detail: String(error.message ?? error) });
     console.error(`  ÉCHEC ${name} — ${error.message ?? error}`);
@@ -359,6 +360,27 @@ await step('encaisser une facture', async () => {
   await until(`__t.modal() === null`, 'fermeture');
   await until(`__t.rows().find(r => r.includes(${JSON.stringify(CLIENT)})).includes('Payée')`, 'statut Payée');
   return 'facture payée';
+});
+
+await step('émettre un avoir sur la facture', async () => {
+  // L'avoir n'est possible que sur une facture émise : le bouton n'apparaît
+  // pas sur un brouillon.
+  await ev(`__t.clickInRow(${JSON.stringify(CLIENT)}, 'Avoir')`);
+  await until(`__t.modal()?.includes('Émettre un avoir')`, "fenêtre d'avoir");
+  const prefilled = await ev(`document.querySelector('.modal-content input').value`);
+  await ev(`__t.fill("Montant HT de l'avoir (€)", '400,50')`);
+  await ev(`__t.fill('Motif', 'Prestation partiellement annulée')`);
+  await ev(`__t.click('.modal-footer .btn-primary', "Émettre l'avoir")`);
+  await until(`__t.modal()?.includes('Avoir émis')`, 'confirmation');
+  const notice = await ev(`__t.flat(__t.modal())`);
+  await ev(`__t.click('.modal-footer .btn-primary', 'OK')`);
+  await until(`__t.flat(document.body.innerText).includes('Avoirs émis')`, 'liste des avoirs');
+  const line = (await ev('__t.rows()')).find((r) => r.includes('AVO-'));
+  if (!line) throw new Error('avoir absent du tableau');
+  if (!line.includes('400,50') && !line.includes('480,60')) {
+    throw new Error(`montant inattendu sur la ligne : ${line}`);
+  }
+  return { montantPréRempli: prefilled, message: notice.slice(0, 90), ligne: line };
 });
 
 await step('préparer un envoi par e-mail', async () => {

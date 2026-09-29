@@ -27,6 +27,8 @@ const SEQUENCE_PADDING: usize = 4;
 pub enum DocumentKind {
     Invoice,
     Estimate,
+    /// Avoir : sa propre série, distincte de celle des factures.
+    CreditNote,
 }
 
 impl DocumentKind {
@@ -34,6 +36,7 @@ impl DocumentKind {
         match self {
             DocumentKind::Invoice => "FAC",
             DocumentKind::Estimate => "DEV",
+            DocumentKind::CreditNote => "AVO",
         }
     }
 
@@ -42,6 +45,7 @@ impl DocumentKind {
         match self {
             DocumentKind::Invoice => "invoice",
             DocumentKind::Estimate => "estimate",
+            DocumentKind::CreditNote => "credit",
         }
     }
 }

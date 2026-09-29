@@ -21,6 +21,9 @@ pub enum Kind {
     Estimate,
     /// Une relance porte sur une facture : même pièce, autre message.
     Reminder,
+    /// Avoir. Seul l'export PDF l'emprunte : un avoir ne s'envoie pas encore
+    /// par e-mail.
+    Credit,
 }
 
 /// Valeurs substituées dans un gabarit.
@@ -61,6 +64,7 @@ pub fn subject(kind: Kind, number: &str, company: &str) -> String {
         Kind::Invoice => format!("Facture {number} - {company}"),
         Kind::Reminder => format!("Rappel : Facture impayée {number} - {company}"),
         Kind::Estimate => format!("Devis {number} - {company}"),
+        Kind::Credit => format!("Avoir {number} - {company}"),
     }
 }
 
@@ -71,7 +75,9 @@ pub fn pick(kind: Kind, settings: &Settings) -> String {
     let (chosen, fallback) = match kind {
         Kind::Invoice => (&settings.email_template_invoice, defaults.email_template_invoice),
         Kind::Reminder => (&settings.email_template_reminder, defaults.email_template_reminder),
-        Kind::Estimate => (&settings.email_template_estimate, defaults.email_template_estimate),
+        Kind::Estimate | Kind::Credit => {
+            (&settings.email_template_estimate, defaults.email_template_estimate)
+        }
     };
 
     if chosen.trim().is_empty() {

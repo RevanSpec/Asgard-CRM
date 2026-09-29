@@ -8,6 +8,7 @@
 
 mod clients;
 mod compta;
+mod credits;
 mod dashboard;
 mod documents;
 mod estimates;

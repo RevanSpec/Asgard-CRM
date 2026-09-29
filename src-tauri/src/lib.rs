@@ -132,6 +132,14 @@ async fn delete_estimate(db: tauri::State<'_, Db>, id: i64) -> Result<DeleteOutc
 }
 
 #[tauri::command]
+async fn create_credit_note(
+    db: tauri::State<'_, Db>,
+    credit: CreditNoteInput,
+) -> Result<CreditNote, DbError> {
+    repo::create_credit_note(&db.pool, credit).await
+}
+
+#[tauri::command]
 async fn convert_estimate(
     db: tauri::State<'_, Db>,
     id: i64,
@@ -394,6 +402,7 @@ pub fn run() {
             set_estimate_status,
             delete_estimate,
             convert_estimate,
+            create_credit_note,
             save_expense,
             delete_expense,
             export_backup,

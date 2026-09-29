@@ -5,6 +5,7 @@ use std::collections::HashSet;
 use asgard_ipc::{DocumentInput, Invoice};
 use leptos::prelude::*;
 
+use super::credits::{self, CreditForm, CreditNotes};
 use super::documents::{self, can_remind, invoice_status_badge, type_badge};
 use super::icons;
 use super::modals::{open_email, Outgoing};
@@ -19,6 +20,7 @@ pub fn invoices() -> impl IntoView {
     let search = RwSignal::new(String::new());
     let selected = RwSignal::new(HashSet::<i64>::new());
     let creating = RwSignal::new(false);
+    let crediting = RwSignal::new(None::<credits::Draft>);
 
     let visible = move || {
         let needle = search.get().to_lowercase();
@@ -126,7 +128,9 @@ pub fn invoices() -> impl IntoView {
                                 {move || {
                                     visible()
                                         .into_iter()
-                                        .map(|invoice| view! { <Row invoice=invoice selected=selected /> })
+                                        .map(|invoice| view! {
+                                            <Row invoice=invoice selected=selected crediting=crediting />
+                                        })
                                         .collect_view()
                                 }}
                             </tbody>
@@ -135,15 +139,29 @@ pub fn invoices() -> impl IntoView {
                 </Show>
             </div>
 
+            <CreditNotes />
+
             <Show when=move || creating.get()>
                 <CreateForm open=creating />
+            </Show>
+
+            <Show when=move || crediting.get().is_some()>
+                {move || {
+                    crediting
+                        .get()
+                        .map(|draft| view! { <CreditForm initial=draft draft=crediting /> })
+                }}
             </Show>
         </div>
     }
 }
 
 #[component]
-fn Row(invoice: Invoice, selected: RwSignal<HashSet<i64>>) -> impl IntoView {
+fn Row(
+    invoice: Invoice,
+    selected: RwSignal<HashSet<i64>>,
+    crediting: RwSignal<Option<credits::Draft>>,
+) -> impl IntoView {
     let app = use_app();
     let id = invoice.id;
     let number = invoice.invoice_number.clone();
@@ -192,6 +210,18 @@ fn Row(invoice: Invoice, selected: RwSignal<HashSet<i64>>) -> impl IntoView {
                                 title="Enregistrer le règlement"
                                 on_click=Callback::new(move |_| {
                                     app.payment.set(Some(PaymentForm { invoice_id: id, number: number.clone() }))
+                                })
+                            />
+                        }
+                    })}
+                    {credits::can_be_credited(&invoice.status).then(|| {
+                        let for_credit = invoice.clone();
+                        view! {
+                            <GoldButton
+                                label="Avoir"
+                                title="Émettre un avoir sur cette facture"
+                                on_click=Callback::new(move |_| {
+                                    crediting.set(Some(credits::Draft::for_invoice(&for_credit)))
                                 })
                             />
                         }

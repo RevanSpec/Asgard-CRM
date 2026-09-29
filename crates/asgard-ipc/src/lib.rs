@@ -168,4 +168,45 @@ pub struct Snapshot {
     pub invoices: Vec<Invoice>,
     pub estimates: Vec<Estimate>,
     pub expenses: Vec<Expense>,
+    pub credit_notes: Vec<CreditNote>,
+}
+
+/// Avoir : annule ou corrige une facture émise, qui ne se modifie pas.
+///
+/// Les montants sont **positifs** — c'est ainsi que la pièce se lit. Le signe
+/// s'applique à l'agrégation, où l'avoir devient une recette négative.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditNote {
+    pub id: i64,
+    pub invoice_id: i64,
+    /// Numéro de la facture corrigée, pour l'affichage et le PDF.
+    pub invoice_number: String,
+    pub client_id: Option<i64>,
+    pub company_name: String,
+    pub credit_number: String,
+    pub service_type: String,
+    pub description: String,
+    pub amount_ht: f64,
+    pub tva_rate: f64,
+    pub amount_tva: f64,
+    pub amount_total: f64,
+    pub date: String,
+    /// Date du remboursement effectif. Tant qu'elle est absente, l'avoir ne
+    /// diminue que le facturé, pas l'encaissé.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub refunded_on: Option<String>,
+}
+
+/// Saisie d'un avoir.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditNoteInput {
+    pub invoice_id: i64,
+    #[serde(default)]
+    pub description: String,
+    pub amount_ht: f64,
+    pub date: String,
+    #[serde(default)]
+    pub refunded_on: Option<String>,
 }

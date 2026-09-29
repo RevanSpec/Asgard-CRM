@@ -109,7 +109,14 @@ mod tests {
 
         assert_eq!(
             tables,
-            vec!["clients", "document_sequences", "estimates", "expenses", "invoices"]
+            vec![
+                "clients",
+                "credit_notes",
+                "document_sequences",
+                "estimates",
+                "expenses",
+                "invoices"
+            ]
         );
     }
 

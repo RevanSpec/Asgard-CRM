@@ -269,6 +269,31 @@ pub async fn record_payment(app: App, payment: PaymentInput, number: String) -> 
     }
 }
 
+/// Émet un avoir sur une facture.
+pub async fn create_credit_note(app: App, credit: asgard_ipc::CreditNoteInput) -> bool {
+    #[derive(Serialize)]
+    struct Args {
+        credit: asgard_ipc::CreditNoteInput,
+    }
+    match ipc::invoke::<_, asgard_ipc::CreditNote>("create_credit_note", &Args { credit }).await {
+        Ok(credit) => {
+            app.reload().await;
+            app.inform(
+                "Avoir émis",
+                format!(
+                    "L'avoir {} corrige la facture {}.",
+                    credit.credit_number, credit.invoice_number
+                ),
+            );
+            true
+        }
+        Err(error) => {
+            app.report_as("Impossible d'émettre l'avoir", error);
+            false
+        }
+    }
+}
+
 /// Coordonnées de l'émetteur imprimées sur le PDF, tirées des réglages.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -320,6 +345,7 @@ pub async fn export_pdf(app: App, kind: Kind, id: i64) {
 fn saved_notice(kind: Kind, path: &str) -> String {
     match kind {
         Kind::Estimate => format!("Devis enregistré : {path}"),
+        Kind::Credit => format!("Avoir enregistré : {path}"),
         Kind::Invoice | Kind::Reminder => format!("Facture enregistrée : {path}"),
     }
 }
@@ -329,6 +355,7 @@ fn saved_notice(kind: Kind, path: &str) -> String {
 fn sent_notice(kind: Kind, recipient: &str) -> String {
     match kind {
         Kind::Estimate => format!("Le devis a été envoyé avec succès à {recipient} !"),
+        Kind::Credit => format!("L'avoir a été envoyé avec succès à {recipient} !"),
         Kind::Invoice | Kind::Reminder => {
             format!("La facture a été envoyée avec succès à {recipient} !")
         }
