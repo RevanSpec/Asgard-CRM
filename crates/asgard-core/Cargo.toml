@@ -1,7 +1,9 @@
 [package]
 name = "asgard-core"
 version = "0.1.0"
-edition = "2021"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
 description = "Logique métier d'Asgard CRM : montants, cotisations URSSAF, seuils légaux, agrégats comptables"
 
 [dependencies]

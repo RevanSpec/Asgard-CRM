@@ -3,8 +3,10 @@ name = "asgard-crm"
 version = "0.1.0"
 description = "Asgard CRM — gestion et facturation pour micro-entrepreneurs"
 authors = ["Asgard CRM"]
-edition = "2021"
-rust-version = "1.77"
+license.workspace = true
+repository.workspace = true
+edition.workspace = true
+rust-version.workspace = true
 
 [lib]
 name = "asgard_crm_lib"

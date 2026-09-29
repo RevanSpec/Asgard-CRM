@@ -1,0 +1,77 @@
+# Publication d'une version.
+#
+# Déclenchée par une étiquette `v*` — jamais par une fusion : publier est un
+# geste délibéré, qui se fait en poussant une étiquette.
+#
+#     git tag v0.2.0 && git push --tags
+#
+# La version de l'étiquette doit être celle de `tauri.conf.json`, qui nomme
+# l'installeur. Une étiquette qui ne correspond pas arrête le travail avant de
+# compiler quoi que ce soit : mieux vaut dix secondes perdues qu'une release
+# nommée `v0.2.0` contenant un installeur `0.1.0`.
+
+name: Publication
+
+on:
+  push:
+    tags: ['v*']
+
+jobs:
+  installer:
+    name: Installeur Windows
+    runs-on: windows-latest
+    permissions:
+      # Pour créer la release et y joindre l'installeur.
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: L'étiquette doit nommer la version de l'application
+        run: |
+          $config = (Get-Content src-tauri/tauri.conf.json -Raw | ConvertFrom-Json).version
+          $tag = "${{ github.ref_name }}" -replace '^v', ''
+          "étiquette : $tag — application : $config"
+          if ($config -ne $tag) {
+            "Les deux doivent coïncider. Corrigez src-tauri/tauri.conf.json, ou l'étiquette."
+            exit 1
+          }
+
+      - name: Chaîne Rust
+        run: rustup target add wasm32-unknown-unknown
+
+      - uses: Swatinem/rust-cache@v2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Outils de compilation de l'interface
+        run: cargo install trunk --locked --version 0.21.14
+
+      - run: npm ci
+
+      # Une version se publie depuis du code qui passe. L'intégration continue
+      # l'a déjà vérifié sur la branche, mais une étiquette peut désigner
+      # n'importe quel commit.
+      - name: Tests
+        run: cargo test --workspace
+
+      # `npm run dist`, jamais `cargo build --release` : ce dernier ne compile
+      # pas l'interface et produit un binaire qui cherche le serveur de
+      # développement. `build.rs` refuse d'ailleurs de compiler dans ce cas.
+      - name: Construire l'installeur
+        run: npm run dist
+
+      - name: Publier la version
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $installer = Get-ChildItem target/release/bundle/nsis/*.exe | Select-Object -First 1
+          if (-not $installer) { "Aucun installeur produit."; exit 1 }
+          "installeur : $($installer.Name) — $([math]::Round($installer.Length / 1MB, 2)) Mo"
+          gh release create "${{ github.ref_name }}" `
+            --title "Asgard CRM ${{ github.ref_name }}" `
+            --notes-file .github/release-notes.md `
+            --generate-notes `
+            $installer.FullName
