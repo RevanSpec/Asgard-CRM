@@ -12,7 +12,8 @@
 # octets, mêmes sommes de contrôle, quelle que soit la machine.
 fixtures/reference-dataset.json text eol=lf
 
-# PDF de référence : binaires, aucune conversion.
+# PDF de référence et polices embarquées : binaires, aucune conversion.
 *.pdf binary
 *.png binary
 *.ico binary
+*.woff2 binary

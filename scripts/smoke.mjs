@@ -30,12 +30,10 @@ const EXE = process.argv[2] ?? 'target/release/asgard-crm.exe';
 const PORT = process.argv[3] ?? '9333';
 const SHOTS = resolve('target/smoke');
 
-/** Messages de console connus, qui ne font pas échouer le parcours. */
-const TOLERATED = [
-  // Les polices Google sont bloquées par la CSP : l'application retombe sur
-  // les polices du système. C'était déjà le cas avec l'interface React.
-  'fonts.googleapis.com',
-];
+/** Messages de console connus, qui ne font pas échouer le parcours.
+ *
+ * Vide depuis que les polices sont embarquées : plus rien n'est toléré. */
+const TOLERATED = [];
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -391,6 +389,45 @@ for (const [tab, heading] of SCREENS) {
     return seen;
   });
 }
+
+// Le thème a été dessiné pour Inter et Outfit. Elles étaient importées depuis
+// Google Fonts, que la CSP bloque : l'application s'affichait avec les polices
+// du système sans que rien ne le signale. Elles sont désormais sur le disque, et
+// ce parcours le vérifie plutôt que de le supposer.
+await step('les polices du thème sont chargées', async () => {
+  await goto('Dashboard');
+  // Les faces déclarées, et leur état : `document.fonts` ne contient que les
+  // `@font-face` de l'application, jamais les polices du système. Une face
+  // « loaded » prouve donc que notre fichier a été lu.
+  const faces = await ev(`
+    (async () => {
+      await document.fonts.ready;
+      return [...document.fonts].map((f) => f.family + ' : ' + f.status);
+    })()
+  `);
+  for (const family of ['Inter', 'Outfit']) {
+    if (!faces.some((f) => f.startsWith(family) && f.endsWith('loaded'))) {
+      throw new Error(`${family} n'est pas chargée — ${faces.join(', ') || 'aucune face déclarée'}`);
+    }
+  }
+  // Et rien ne sort de la machine. Les appels à l'hôte passent par
+  // `ipc.localhost`, la page par `tauri.localhost` : tout le reste serait une
+  // requête vers l'extérieur, que la CSP bloquerait de toute façon.
+  const remote = await ev(`
+    performance.getEntriesByType('resource')
+      .map((e) => e.name)
+      .filter((name) => {
+        try {
+          const host = new URL(name).hostname;
+          return !(host === 'localhost' || host === '127.0.0.1' || host.endsWith('.localhost'));
+        } catch {
+          return false;
+        }
+      })
+  `);
+  if (remote.length > 0) throw new Error(`requêtes externes : ${remote.slice(0, 3).join(', ')}`);
+  return faces.join(', ');
+});
 
 const CLIENT = 'Gjallarhorn SARL';
 const SIREN = '552 100 554';

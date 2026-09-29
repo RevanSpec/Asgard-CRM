@@ -39,7 +39,7 @@
 * **Interface** : [Leptos](https://leptos.dev/) compilé en WebAssembly avec [trunk](https://trunkrs.dev/)
 * **Noyau métier** : crate `asgard-core` (cotisations URSSAF, seuils, agrégats), partagé par l'hôte et l'interface
 * **Base de données** : SQLite via [sqlx](https://github.com/launchbadge/sqlx)
-* **Design** : Interface responsive moderne avec thème sombre *glassmorphism* haut de gamme.
+* **Design** : Interface responsive moderne avec thème sombre *glassmorphism* haut de gamme. Polices [Inter](https://rsms.me/inter/) et [Outfit](https://github.com/Outfitio/Outfit-Fonts) embarquées (SIL Open Font License 1.1) : l'application ne fait aucune requête réseau au démarrage.
 * **Génération PDF** : [printpdf](https://github.com/fschutt/printpdf) (côté Rust)
 * **Envoi d'emails** : [lettre](https://lettre.rs/) (commande Tauri, côté Rust)
 * **Secrets** : trousseau du système d'exploitation via [keyring](https://crates.io/crates/keyring)
