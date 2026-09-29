@@ -35,6 +35,69 @@ impl ServiceType {
     pub fn is_sale(self) -> bool {
         matches!(self, ServiceType::Vente)
     }
+
+    /// Lecture de la valeur telle que la base la stocke.
+    ///
+    /// Une valeur inconnue retombe sur les BNC, comme le faisait le JavaScript :
+    /// sur une pièce déjà enregistrée, refuser de lire ne rendrait service à
+    /// personne.
+    pub fn from_stored(raw: &str) -> Self {
+        match raw {
+            "service_bic" => ServiceType::ServiceBic,
+            "vente" => ServiceType::Vente,
+            _ => ServiceType::ServiceBnc,
+        }
+    }
+}
+
+/// Nature de l'opération facturée.
+///
+/// Mention ajoutée par le décret n° 2022-1299, qui exige de dire si la pièce
+/// porte sur des livraisons de biens, des prestations de services, ou les deux.
+/// Elle vit ici, avec le type d'activité dont elle se déduit, plutôt que dans le
+/// générateur de PDF : l'hôte l'enregistre, l'interface la propose, le PDF
+/// l'imprime.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Operation {
+    Goods,
+    Services,
+    Both,
+}
+
+impl Operation {
+    /// Ce que le type d'activité dit déjà de l'opération.
+    ///
+    /// Une vente de marchandises est une livraison de biens ; les deux autres
+    /// types sont des prestations. Le cas mixte, lui, ne se déduit de rien — il
+    /// se saisit.
+    pub fn from_service_type(service_type: ServiceType) -> Self {
+        if service_type.is_sale() {
+            Operation::Goods
+        } else {
+            Operation::Services
+        }
+    }
+
+    /// Valeur enregistrée en base, et lue par l'interface.
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Operation::Goods => "biens",
+            Operation::Services => "services",
+            Operation::Both => "mixte",
+        }
+    }
+
+    /// Lecture d'une valeur enregistrée. Une valeur inconnue n'en est pas une :
+    /// mieux vaut ne rien affirmer que d'imprimer une nature au hasard.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "biens" => Some(Operation::Goods),
+            "services" => Some(Operation::Services),
+            "mixte" => Some(Operation::Both),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -197,6 +260,43 @@ impl Default for Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// La nature de l'opération se déduit du type d'activité, sauf le cas mixte
+    /// qui ne se déduit de rien.
+    #[test]
+    fn the_operation_follows_the_activity() {
+        assert_eq!(Operation::from_service_type(ServiceType::Vente), Operation::Goods);
+        assert_eq!(
+            Operation::from_service_type(ServiceType::ServiceBnc),
+            Operation::Services
+        );
+        assert_eq!(
+            Operation::from_service_type(ServiceType::ServiceBic),
+            Operation::Services
+        );
+    }
+
+    /// Ce qui s'écrit en base se relit à l'identique ; une valeur inconnue ne
+    /// devient pas une nature au hasard.
+    #[test]
+    fn stored_operations_survive_a_round_trip() {
+        for operation in [Operation::Goods, Operation::Services, Operation::Both] {
+            assert_eq!(Operation::parse(operation.as_str()), Some(operation));
+        }
+
+        assert_eq!(Operation::parse(""), None);
+        assert_eq!(Operation::parse("marchandises"), None);
+    }
+
+    /// Le type d'activité se relit tel que la base le stocke, et une valeur
+    /// inattendue retombe sur les BNC plutôt que d'interrompre une lecture.
+    #[test]
+    fn stored_service_types_are_read_back() {
+        assert_eq!(ServiceType::from_stored("vente"), ServiceType::Vente);
+        assert_eq!(ServiceType::from_stored("service_bic"), ServiceType::ServiceBic);
+        assert_eq!(ServiceType::from_stored("service_bnc"), ServiceType::ServiceBnc);
+        assert_eq!(ServiceType::from_stored("inconnu"), ServiceType::ServiceBnc);
+    }
 
     #[test]
     fn parses_iso_dates_with_or_without_time() {

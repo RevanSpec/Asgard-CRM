@@ -29,6 +29,16 @@ pub struct Settings {
     /// l'échéance au moment de l'émission, puis ne la change plus.
     pub payment_terms_days: u32,
 
+    /// Médiateur de la consommation, obligatoire dès qu'on facture des
+    /// particuliers (art. L616-1 du code de la consommation).
+    pub mediator: String,
+    /// Assurance professionnelle, obligatoire pour les activités qui y sont
+    /// soumises (art. L112-11 du code des assurances).
+    pub insurance: String,
+    /// Option pour le paiement de la TVA d'après les débits, à mentionner sur
+    /// les factures lorsqu'elle a été exercée.
+    pub vat_on_debits: bool,
+
     pub urssaf_service_bnc: f64,
     pub urssaf_service_bic: f64,
     pub urssaf_vente: f64,
@@ -70,6 +80,10 @@ impl Default for Settings {
             iban: String::new(),
 
             payment_terms_days: 30,
+
+            mediator: String::new(),
+            insurance: String::new(),
+            vat_on_debits: false,
 
             urssaf_service_bnc: 21.1,
             urssaf_service_bic: 21.1,

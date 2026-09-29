@@ -648,6 +648,9 @@ mod tests {
             email: String::new(),
             phone: String::new(),
             address: String::new(),
+            siren: String::new(),
+            vat_number: String::new(),
+            delivery_address: String::new(),
             created_at: created.into(),
         };
         let clients: Vec<Client> = (1..=7).map(|i| client(i, &format!("2026-0{i}-01T00:00:00Z"))).collect();

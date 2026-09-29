@@ -9,6 +9,7 @@ use sqlx::{Row, SqlitePool};
 
 use asgard_ipc::*;
 use super::money::from_cents;
+use asgard_core::model::{Operation, ServiceType};
 use asgard_core::money::to_cents as decimal_to_cents;
 use asgard_core::CivilDate;
 use super::numbering::{self, DocumentKind};
@@ -34,7 +35,8 @@ fn now() -> String {
 
 pub async fn list_clients(pool: &SqlitePool) -> Result<Vec<Client>, DbError> {
     let rows = sqlx::query(
-        "SELECT id, company_name, contact_name, email, phone, address, created_at
+        "SELECT id, company_name, contact_name, email, phone, address,
+                siren, vat_number, delivery_address, created_at
          FROM clients WHERE deleted_at IS NULL ORDER BY company_name COLLATE NOCASE",
     )
     .fetch_all(pool)
@@ -49,6 +51,9 @@ pub async fn list_clients(pool: &SqlitePool) -> Result<Vec<Client>, DbError> {
             email: r.get("email"),
             phone: r.get("phone"),
             address: r.get("address"),
+            siren: r.get("siren"),
+            vat_number: r.get("vat_number"),
+            delivery_address: r.get("delivery_address"),
             created_at: r.get("created_at"),
         })
         .collect())
@@ -61,13 +66,17 @@ pub async fn save_client(pool: &SqlitePool, input: ClientInput) -> Result<i64, D
         Some(id) => {
             sqlx::query(
                 "UPDATE clients SET company_name = ?1, contact_name = ?2, email = ?3,
-                    phone = ?4, address = ?5 WHERE id = ?6",
+                    phone = ?4, address = ?5, siren = ?6, vat_number = ?7,
+                    delivery_address = ?8 WHERE id = ?9",
             )
             .bind(&input.company_name)
             .bind(&input.contact_name)
             .bind(&input.email)
             .bind(&input.phone)
             .bind(&input.address)
+            .bind(&input.siren)
+            .bind(&input.vat_number)
+            .bind(&input.delivery_address)
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -88,14 +97,18 @@ pub async fn save_client(pool: &SqlitePool, input: ClientInput) -> Result<i64, D
         }
         None => {
             sqlx::query_scalar(
-                "INSERT INTO clients (company_name, contact_name, email, phone, address, created_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6) RETURNING id",
+                "INSERT INTO clients (company_name, contact_name, email, phone, address,
+                    siren, vat_number, delivery_address, created_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9) RETURNING id",
             )
             .bind(&input.company_name)
             .bind(&input.contact_name)
             .bind(&input.email)
             .bind(&input.phone)
             .bind(&input.address)
+            .bind(&input.siren)
+            .bind(&input.vat_number)
+            .bind(&input.delivery_address)
             .bind(now())
             .fetch_one(&mut *tx)
             .await?
@@ -137,6 +150,7 @@ fn invoice_from_row(r: &sqlx::sqlite::SqliteRow) -> Invoice {
         status: r.get("status"),
         payment_date: r.get("payment_date"),
         payment_method: r.get("payment_method"),
+        operation_kind: r.get("operation_kind"),
     }
 }
 
@@ -163,6 +177,27 @@ fn due_date(date: &str, terms_days: Option<u32>) -> Option<String> {
 /// Délai de règlement retenu quand les réglages n'en donnent pas.
 pub const DEFAULT_PAYMENT_TERMS_DAYS: u32 = 30;
 
+/// Nature de l'opération enregistrée avec la pièce.
+///
+/// Le formulaire la propose, déduite du type d'activité, et l'utilisateur peut
+/// la corriger — une opération mixte ne se devine pas. À défaut de saisie, la
+/// déduction s'applique : une pièce créée aujourd'hui ne doit pas naître sans
+/// cette mention, qui devient obligatoire avec la facturation électronique.
+///
+/// Les pièces antérieures, elles, gardent leur nature nulle : le PDF la déduit
+/// à l'impression plutôt que de réécrire une pièce déjà émise.
+fn operation_kind(input: &DocumentInput) -> String {
+    input
+        .operation_kind
+        .as_deref()
+        .and_then(Operation::parse)
+        .unwrap_or_else(|| {
+            Operation::from_service_type(ServiceType::from_stored(&input.service_type))
+        })
+        .as_str()
+        .to_string()
+}
+
 /// Crée une facture et lui attribue son numéro dans la même transaction.
 pub async fn create_invoice(pool: &SqlitePool, input: DocumentInput) -> Result<Invoice, DbError> {
     let amounts = input.amounts();
@@ -180,8 +215,8 @@ pub async fn create_invoice(pool: &SqlitePool, input: DocumentInput) -> Result<I
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO invoices (client_id, company_name, invoice_number, service_type,
             description, amount_ht_cents, tva_rate, amount_tva_cents, amount_total_cents,
-            date, due_date, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) RETURNING id",
+            date, due_date, status, operation_kind)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13) RETURNING id",
     )
     .bind(input.client_id)
     .bind(&input.company_name)
@@ -195,6 +230,7 @@ pub async fn create_invoice(pool: &SqlitePool, input: DocumentInput) -> Result<I
     .bind(&input.date)
     .bind(due_date(&input.date, input.payment_terms_days))
     .bind(input.status.as_deref().unwrap_or("brouillon"))
+    .bind(operation_kind(&input))
     .fetch_one(&mut *tx)
     .await?;
 
@@ -296,6 +332,7 @@ fn estimate_from_row(r: &sqlx::sqlite::SqliteRow) -> Estimate {
         amount_total: from_cents(r.get("amount_total_cents")),
         date: r.get("date"),
         status: r.get("status"),
+        operation_kind: r.get("operation_kind"),
     }
 }
 
@@ -318,8 +355,8 @@ pub async fn save_estimate(pool: &SqlitePool, input: DocumentInput) -> Result<Es
             sqlx::query(
                 "UPDATE estimates SET client_id = ?1, company_name = ?2, service_type = ?3,
                     description = ?4, amount_ht_cents = ?5, tva_rate = ?6, amount_tva_cents = ?7,
-                    amount_total_cents = ?8, date = ?9, status = ?10
-                 WHERE id = ?11 AND deleted_at IS NULL",
+                    amount_total_cents = ?8, date = ?9, status = ?10, operation_kind = ?11
+                 WHERE id = ?12 AND deleted_at IS NULL",
             )
             .bind(input.client_id)
             .bind(&input.company_name)
@@ -331,6 +368,7 @@ pub async fn save_estimate(pool: &SqlitePool, input: DocumentInput) -> Result<Es
             .bind(decimal_to_cents(amounts.amount_total))
             .bind(&input.date)
             .bind(input.status.as_deref().unwrap_or("brouillon"))
+            .bind(operation_kind(&input))
             .bind(id)
             .execute(&mut *tx)
             .await?;
@@ -349,8 +387,8 @@ pub async fn save_estimate(pool: &SqlitePool, input: DocumentInput) -> Result<Es
             sqlx::query_scalar(
                 "INSERT INTO estimates (client_id, company_name, estimate_number, service_type,
                     description, amount_ht_cents, tva_rate, amount_tva_cents, amount_total_cents,
-                    date, status)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) RETURNING id",
+                    date, status, operation_kind)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12) RETURNING id",
             )
             .bind(input.client_id)
             .bind(&input.company_name)
@@ -363,6 +401,7 @@ pub async fn save_estimate(pool: &SqlitePool, input: DocumentInput) -> Result<Es
             .bind(decimal_to_cents(amounts.amount_total))
             .bind(&input.date)
             .bind(input.status.as_deref().unwrap_or("brouillon"))
+            .bind(operation_kind(&input))
             .fetch_one(&mut *tx)
             .await?
         }
@@ -445,8 +484,8 @@ pub async fn convert_estimate(
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO invoices (client_id, company_name, invoice_number, service_type,
             description, amount_ht_cents, tva_rate, amount_tva_cents, amount_total_cents,
-            date, due_date, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'brouillon') RETURNING id",
+            date, due_date, status, operation_kind)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 'brouillon', ?12) RETURNING id",
     )
     .bind(est.get::<Option<i64>, _>("client_id"))
     .bind(&company_name)
@@ -459,6 +498,9 @@ pub async fn convert_estimate(
     .bind(est.get::<i64, _>("amount_total_cents"))
     .bind(&date)
     .bind(due_date(&date, payment_terms_days))
+    // La facture dit ce que le devis disait : accepter un devis ne change pas
+    // la nature de ce qui est vendu.
+    .bind(est.get::<Option<String>, _>("operation_kind"))
     .fetch_one(&mut *tx)
     .await?;
 
@@ -674,6 +716,9 @@ mod tests {
                 email: "valk@coffee.asgard".into(),
                 phone: "06 55 55 55 55".into(),
                 address: "45 rue du Bifrost, 75011 Paris".into(),
+                siren: String::new(),
+                vat_number: String::new(),
+                delivery_address: String::new(),
             },
         )
         .await
@@ -693,8 +738,98 @@ mod tests {
             tva_rate: 20.0,
             date: date.into(),
             payment_terms_days: terms,
+            operation_kind: None,
             status: None,
         }
+    }
+
+
+    // ----------------------------------- identifiants et nature de l'opération
+
+    /// Les identifiants du client font l'aller-retour : ils seront exigés sur
+    /// les factures avec la facturation électronique, et devoir les ressaisir le
+    /// jour venu serait le seul vrai coût de cette migration.
+    #[tokio::test]
+    async fn client_identifiers_survive_a_round_trip() {
+        let pool = fresh_pool().await;
+
+        save_client(
+            &pool,
+            ClientInput {
+                id: Some(1),
+                company_name: "Asgard Coffee & Co".into(),
+                contact_name: "Valkyrie".into(),
+                email: "valk@coffee.asgard".into(),
+                phone: "06 55 55 55 55".into(),
+                address: "45 rue du Bifrost, 75011 Paris".into(),
+                siren: "552 100 554".into(),
+                vat_number: "FR 12 552100554".into(),
+                delivery_address: "7 quai de Nidavellir, 29200 Brest".into(),
+            },
+        )
+        .await
+        .unwrap();
+
+        let client = list_clients(&pool).await.unwrap().remove(0);
+        assert_eq!(client.siren, "552 100 554");
+        assert_eq!(client.vat_number, "FR 12 552100554");
+        assert_eq!(client.delivery_address, "7 quai de Nidavellir, 29200 Brest");
+    }
+
+    /// Une pièce créée aujourd'hui porte toujours la mention : à défaut de
+    /// saisie, elle se déduit du type d'activité.
+    #[tokio::test]
+    async fn a_new_document_always_records_its_operation() {
+        let pool = fresh_pool().await;
+
+        // « vente » : une livraison de biens.
+        let invoice = create_invoice(&pool, input("2026-04-18T10:00:00Z", None)).await.unwrap();
+        assert_eq!(invoice.operation_kind.as_deref(), Some("biens"));
+
+        let services = DocumentInput {
+            service_type: "service_bnc".into(),
+            ..input("2026-04-18T10:00:00Z", None)
+        };
+        let invoice = create_invoice(&pool, services).await.unwrap();
+        assert_eq!(invoice.operation_kind.as_deref(), Some("services"));
+    }
+
+    /// Le cas mixte ne se déduit d'aucun type d'activité : il ne peut venir que
+    /// de la saisie, et doit donc l'emporter sur la déduction.
+    #[tokio::test]
+    async fn a_chosen_operation_overrides_the_deduction() {
+        let pool = fresh_pool().await;
+
+        let mixed = DocumentInput {
+            operation_kind: Some("mixte".into()),
+            ..input("2026-04-18T10:00:00Z", None)
+        };
+        let invoice = create_invoice(&pool, mixed).await.unwrap();
+        assert_eq!(invoice.operation_kind.as_deref(), Some("mixte"));
+
+        // Une valeur que personne ne sait lire ne s'enregistre pas telle quelle.
+        let nonsense = DocumentInput {
+            operation_kind: Some("marchandises".into()),
+            ..input("2026-04-18T10:00:00Z", None)
+        };
+        let invoice = create_invoice(&pool, nonsense).await.unwrap();
+        assert_eq!(invoice.operation_kind.as_deref(), Some("biens"));
+    }
+
+    /// Accepter un devis ne change pas la nature de ce qui est vendu.
+    #[tokio::test]
+    async fn conversion_carries_the_operation_over() {
+        let pool = fresh_pool().await;
+
+        let estimate = DocumentInput {
+            operation_kind: Some("mixte".into()),
+            ..input("2026-04-18T10:00:00Z", None)
+        };
+        let estimate = save_estimate(&pool, estimate).await.unwrap();
+        assert_eq!(estimate.operation_kind.as_deref(), Some("mixte"));
+
+        let invoice = convert_estimate(&pool, estimate.id, None).await.unwrap();
+        assert_eq!(invoice.operation_kind.as_deref(), Some("mixte"));
     }
 
     #[test]

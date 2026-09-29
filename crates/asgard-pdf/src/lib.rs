@@ -16,7 +16,7 @@
 
 mod layout;
 
-use asgard_core::model::{CivilDate, ServiceType};
+use asgard_core::model::{CivilDate, Operation, ServiceType};
 use asgard_core::money::{round_cents, Money};
 use layout::{flip, parse_hex, text_width_mm, wrap, Align, Rgb, PAGE_HEIGHT, PAGE_WIDTH};
 use printpdf::*;
@@ -91,6 +91,21 @@ pub struct Document {
     /// Numéro de la facture qu'un avoir corrige. La référence est obligatoire :
     /// un avoir isolé ne se rattache à rien.
     pub corrects: Option<String>,
+    /// Nature de l'opération, telle qu'elle a été enregistrée. Absente des
+    /// pièces émises avant qu'on ne la demande : elle se déduit alors du type
+    /// d'activité, qui disait déjà la même chose.
+    pub operation: Option<Operation>,
+}
+
+/// Mention imprimée pour une nature d'opération, dans les termes du décret.
+fn operation_sentence(operation: Operation) -> &'static str {
+    match operation {
+        Operation::Goods => "Opération portant exclusivement sur des livraisons de biens.",
+        Operation::Services => "Opération portant exclusivement sur des prestations de services.",
+        Operation::Both => {
+            "Opération portant sur des livraisons de biens et des prestations de services."
+        }
+    }
 }
 
 /// Coordonnées du client destinataire.
@@ -101,6 +116,12 @@ pub struct Party {
     pub address: String,
     pub phone: String,
     pub email: String,
+    /// SIREN du client, mention obligatoire entre professionnels.
+    pub siren: String,
+    /// Numéro de TVA intracommunautaire, quand le client en a un.
+    pub vat_number: String,
+    /// Adresse de livraison, à imprimer lorsqu'elle diffère de celle-ci.
+    pub delivery_address: String,
 }
 
 /// Coordonnées et mentions de l'émetteur.
@@ -117,6 +138,18 @@ pub struct Issuer {
     /// Logo, tel que les réglages le stockent : une URL de données
     /// (`data:image/png;base64,…`). Vide quand l'émetteur n'en a pas.
     pub logo: String,
+    /// Médiateur de la consommation, obligatoire dès qu'on facture des
+    /// particuliers (art. L616-1 du code de la consommation). Texte libre :
+    /// l'identité du médiateur et son adresse électronique ou postale ne
+    /// suivent aucun format imposé.
+    pub mediator: String,
+    /// Assurance professionnelle, obligatoire pour les activités qui y sont
+    /// soumises (art. L112-11 du code des assurances) : assureur, garantie et
+    /// couverture géographique, sur les factures comme sur les devis.
+    pub insurance: String,
+    /// L'émetteur a-t-il opté pour le paiement de la TVA d'après les débits ?
+    /// La mention n'a de sens que pour qui facture de la TVA.
+    pub vat_on_debits: bool,
 }
 
 impl Issuer {
@@ -164,6 +197,9 @@ impl Default for Issuer {
             iban: String::new(),
             accent_colour: DEFAULT_ACCENT.into(),
             logo: String::new(),
+            mediator: String::new(),
+            insurance: String::new(),
+            vat_on_debits: false,
         }
     }
 }
@@ -324,15 +360,23 @@ const LATE_PAYMENT_TERMS: &str = concat!(
 
 /// Mentions légales du bas de page.
 ///
-/// Le texte est réglementaire et dépend du type de document et du taux de TVA.
-/// Le sortir du code de dessin le rend testable — c'est la partie qui expose à
-/// un contrôle, pas la position des traits.
+/// Le texte est réglementaire : il dépend du type de document, du taux de TVA,
+/// de ce que l'émetteur doit annoncer et de ce que le client a déclaré. Le
+/// sortir du code de dessin le rend testable — c'est la partie qui expose à un
+/// contrôle, pas la position des traits.
+///
+/// La fonction reçoit les trois objets plutôt qu'une liste de champs : la liste
+/// s'allongeait à chaque mention ajoutée, et rien n'y disait d'où venait quoi.
 pub fn legal_notice(
     kind: DocumentKind,
-    tva_rate: Money,
-    iban: &str,
-    due_date: Option<CivilDate>,
+    document: &Document,
+    issuer: &Issuer,
+    client: &Party,
 ) -> String {
+    let tva_rate = document.tva_rate;
+    let iban = issuer.iban.as_str();
+    let due_date = document.due_date;
+
     let mut notice = String::new();
 
     if kind.is_invoice() {
@@ -367,6 +411,8 @@ pub fn legal_notice(
         // D441-5 du code de commerce. Leur absence est sanctionnable, et elles
         // manquaient depuis l'origine.
         notice.push_str(LATE_PAYMENT_TERMS);
+        notice.push('\n');
+        notice.push_str(&operation_mentions(document, issuer, client));
     } else if kind == DocumentKind::CreditNote {
         if tva_rate.is_zero() {
             notice.push_str("TVA non applicable, article 293 B du CGI.\n");
@@ -380,8 +426,11 @@ pub fn legal_notice(
             "Le présent avoir annule ou corrige la facture mentionnée ci-dessus, à concurrence du montant indiqué.\n",
         );
         notice.push_str(
-            "Il est imputable sur une prochaine facture ou remboursé par virement, au choix du client.",
+            "Il est imputable sur une prochaine facture ou remboursé par virement, au choix du client.\n",
         );
+        // Un avoir corrige une facture : il en porte les mentions, faute de quoi
+        // la pièce rectificative en dirait moins que celle qu'elle rectifie.
+        notice.push_str(&operation_mentions(document, issuer, client));
     } else {
         notice.push_str("Devis valable pour une durée de 3 mois à compter de la date d'émission.\n");
         notice.push_str(
@@ -392,7 +441,54 @@ pub fn legal_notice(
         );
     }
 
+    // Mentions liées à l'activité, communes aux trois pièces. L'assurance doit
+    // figurer sur les factures **et** les devis (art. L112-11 du code des
+    // assurances) ; le médiateur se communique au consommateur par tout moyen
+    // approprié, et une pièce qu'il garde en est un.
+    for (label, value) in [
+        ("Médiateur de la consommation", issuer.mediator.trim()),
+        ("Assurance professionnelle", issuer.insurance.trim()),
+    ] {
+        if !value.is_empty() {
+            if !notice.is_empty() && !notice.ends_with('\n') {
+                notice.push('\n');
+            }
+            notice.push_str(&format!("{label} : {value}"));
+        }
+    }
+
     notice
+}
+
+/// Mentions de la facture ajoutées par le décret n° 2022-1299 : nature de
+/// l'opération, adresse de livraison si elle diffère, option pour le paiement
+/// de la TVA d'après les débits.
+///
+/// Elles entrent en vigueur avec l'obligation de facturation électronique. Les
+/// imprimer dès maintenant ne coûte rien et évite d'avoir à ressaisir quoi que
+/// ce soit le jour venu.
+fn operation_mentions(document: &Document, issuer: &Issuer, client: &Party) -> String {
+    let mut mentions = String::new();
+
+    // Une pièce émise avant qu'on ne demande la nature garde ce que son type
+    // d'activité disait déjà : une vente est une livraison de biens.
+    let operation = document
+        .operation
+        .unwrap_or_else(|| Operation::from_service_type(document.service_type));
+    mentions.push_str(operation_sentence(operation));
+
+    // L'adresse de livraison n'est exigée que lorsqu'elle diffère de l'adresse
+    // de facturation — la répéter à l'identique n'apprendrait rien.
+    let delivery = client.delivery_address.trim();
+    if !delivery.is_empty() && !delivery.eq_ignore_ascii_case(client.address.trim()) {
+        mentions.push_str(&format!("\nLivraison à : {delivery}."));
+    }
+
+    if issuer.vat_on_debits && !document.tva_rate.is_zero() {
+        mentions.push_str("\nOption pour le paiement de la TVA d'après les débits.");
+    }
+
+    mentions
 }
 
 /// Édite le document et renvoie le PDF encodé.
@@ -489,6 +585,18 @@ pub fn render(
     canvas.wrapped(&client.address, 9.0, 110.0, y + 16.0, 80.0, false, NAVY);
     canvas.text(&format!("Tél : {}", client.phone), 9.0, 110.0, y + 27.0, Align::Left, false, NAVY);
     canvas.text(&format!("Email : {}", client.email), 9.0, 110.0, y + 32.0, Align::Left, false, NAVY);
+    // Le SIREN du client devient une mention obligatoire avec la facturation
+    // électronique. Il se lit sous ses coordonnées, à la place laissée libre en
+    // face du SIRET de l'émetteur ; la seconde ligne remonte si la première
+    // manque.
+    let mut identity_y = y + 37.0;
+    for (label, value) in [("SIREN", &client.siren), ("N° TVA", &client.vat_number)] {
+        if value.trim().is_empty() {
+            continue;
+        }
+        canvas.text(&format!("{label} : {value}"), 9.0, 110.0, identity_y, Align::Left, false, NAVY);
+        identity_y += 5.0;
+    }
 
     canvas.text(kind.number_label(), 9.0, PAGE_WIDTH - 20.0, y, Align::Right, true, NAVY);
     canvas.text(&document.number, 9.0, PAGE_WIDTH - 20.0, y + 5.0, Align::Right, false, NAVY);
@@ -575,7 +683,7 @@ pub fn render(
     let y = 190.0;
     canvas.text("MENTIONS LÉGALES & CONDITIONS", 8.0, 20.0, y, Align::Left, true, NAVY);
 
-    let notice = legal_notice(kind, document.tva_rate, &issuer.iban, document.due_date);
+    let notice = legal_notice(kind, document, issuer, client);
     // Le devis réserve la moitié droite au cadre de signature.
     let max_width = if kind.is_binding() { PAGE_WIDTH - 40.0 } else { 95.0 };
 

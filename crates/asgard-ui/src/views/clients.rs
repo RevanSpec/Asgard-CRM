@@ -18,6 +18,9 @@ struct Draft {
     email: String,
     phone: String,
     address: String,
+    siren: String,
+    vat_number: String,
+    delivery_address: String,
 }
 
 impl From<&Client> for Draft {
@@ -29,6 +32,9 @@ impl From<&Client> for Draft {
             email: client.email.clone(),
             phone: client.phone.clone(),
             address: client.address.clone(),
+            siren: client.siren.clone(),
+            vat_number: client.vat_number.clone(),
+            delivery_address: client.delivery_address.clone(),
         }
     }
 }
@@ -159,6 +165,9 @@ fn Form(initial: Draft, draft: RwSignal<Option<Draft>>) -> impl IntoView {
     let email = RwSignal::new(initial.email);
     let phone = RwSignal::new(initial.phone);
     let address = RwSignal::new(initial.address);
+    let siren = RwSignal::new(initial.siren);
+    let vat_number = RwSignal::new(initial.vat_number);
+    let delivery_address = RwSignal::new(initial.delivery_address);
     let errors = RwSignal::new(FieldErrors::default());
     let error = move |field| Signal::derive(move || errors.with(|e| e.get(field)));
 
@@ -190,6 +199,9 @@ fn Form(initial: Draft, draft: RwSignal<Option<Draft>>) -> impl IntoView {
             email,
             phone,
             address,
+            siren: siren.get().trim().to_string(),
+            vat_number: vat_number.get().trim().to_string(),
+            delivery_address: delivery_address.get().trim().to_string(),
         };
         leptos::task::spawn_local(async move {
             if actions::save_client(app, input).await {
@@ -236,6 +248,29 @@ fn Form(initial: Draft, draft: RwSignal<Option<Draft>>) -> impl IntoView {
                         placeholder="Ex: 12 Rue de la Paix, 75002 Paris"
                         error=error(Field::Address)
                     />
+
+                    // Mentions que la facturation électronique rendra
+                    // obligatoires (décret n° 2022-1299). Facultatives ici : un
+                    // client particulier n'a pas de SIREN, et une prestation ne
+                    // se livre nulle part.
+                    <div class="settings-section-title" style="margin-top: 0.5rem">
+                        "Mentions de facturation"
+                    </div>
+                    <TextField
+                        label="SIREN"
+                        value=siren
+                        placeholder="Ex: 839 204 123 — vide pour un particulier"
+                    />
+                    <TextField
+                        label="N° de TVA intracommunautaire"
+                        value=vat_number
+                        placeholder="Ex: FR 12 839204123"
+                    />
+                    <TextField
+                        label="Adresse de livraison"
+                        value=delivery_address
+                        placeholder="Seulement si elle diffère de l'adresse ci-dessus"
+                    />
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary" on:click=move |_| draft.set(None)>
@@ -262,6 +297,9 @@ mod tests {
             email: "pepper@stark.com".into(),
             phone: "06 11 22 33 44".into(),
             address: "12 rue de Paris".into(),
+            siren: "839204123".into(),
+            vat_number: String::new(),
+            delivery_address: String::new(),
             created_at: String::new(),
         }
     }

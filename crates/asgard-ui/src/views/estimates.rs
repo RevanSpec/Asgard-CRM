@@ -23,6 +23,9 @@ struct Draft {
     date: String,
     status: String,
     description: String,
+    /// Nature de l'opération déjà enregistrée, le cas échéant : un devis émis
+    /// garde ce qu'il affirme.
+    operation_kind: Option<String>,
 }
 
 impl Draft {
@@ -36,6 +39,7 @@ impl Draft {
             date: today_iso(),
             status: "brouillon".into(),
             description: String::new(),
+            operation_kind: None,
         }
     }
 
@@ -49,6 +53,7 @@ impl Draft {
             date: est.date.get(..10).unwrap_or(&est.date).to_string(),
             status: est.status.clone(),
             description: est.description.clone(),
+            operation_kind: est.operation_kind.clone(),
         }
     }
 }
@@ -233,6 +238,13 @@ fn Form(initial: Draft, draft: RwSignal<Option<Draft>>) -> impl IntoView {
     let date = RwSignal::new(initial.date);
     let status = RwSignal::new(initial.status);
     let description = RwSignal::new(initial.description);
+    // Une pièce déjà enregistrée garde la nature qu'elle porte ; une nouvelle
+    // part de ce que son type d'activité laisse attendre.
+    let operation = RwSignal::new(match initial.operation_kind.clone() {
+        Some(stored) => stored,
+        None => documents::default_operation(&service_type.get_untracked()),
+    });
+    documents::follow_service_type(service_type, operation);
     let errors = RwSignal::new(FieldErrors::default());
     let error = move |field| Signal::derive(move || errors.with(|e| e.get(field)));
     let id = initial.id;
@@ -276,6 +288,7 @@ fn Form(initial: Draft, draft: RwSignal<Option<Draft>>) -> impl IntoView {
             date: format!("{}T00:00:00Z", date.get()),
             // Un devis ne fait pas naître de créance : pas d'échéance.
             payment_terms_days: None,
+            operation_kind: Some(operation.get()),
             // Un nouveau devis naît toujours en brouillon, comme dans l'original.
             status: Some(if id.is_some() { status.get() } else { "brouillon".into() }),
         };
@@ -299,6 +312,11 @@ fn Form(initial: Draft, draft: RwSignal<Option<Draft>>) -> impl IntoView {
                         label="Type d'activité"
                         value=service_type
                         options=Signal::derive(documents::service_types)
+                    />
+                    <SelectField
+                        label="Nature de l'opération"
+                        value=operation
+                        options=Signal::derive(documents::operation_kinds)
                     />
                     <SelectField label="Taux de TVA (%)" value=tva options=Signal::derive(documents::tva_rates) />
                     <TextField

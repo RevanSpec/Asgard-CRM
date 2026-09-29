@@ -35,6 +35,9 @@ struct Fields {
     siret: RwSignal<String>,
     iban: RwSignal<String>,
     payment_terms: RwSignal<String>,
+    mediator: RwSignal<String>,
+    insurance: RwSignal<String>,
+    vat_on_debits: RwSignal<bool>,
     urssaf_bnc: RwSignal<String>,
     urssaf_bic: RwSignal<String>,
     urssaf_vente: RwSignal<String>,
@@ -61,6 +64,9 @@ impl Fields {
             siret: RwSignal::new(s.siret),
             iban: RwSignal::new(s.iban),
             payment_terms: RwSignal::new(s.payment_terms_days.to_string()),
+            mediator: RwSignal::new(s.mediator),
+            insurance: RwSignal::new(s.insurance),
+            vat_on_debits: RwSignal::new(s.vat_on_debits),
             urssaf_bnc: RwSignal::new(s.urssaf_service_bnc.to_string()),
             urssaf_bic: RwSignal::new(s.urssaf_service_bic.to_string()),
             urssaf_vente: RwSignal::new(s.urssaf_vente.to_string()),
@@ -98,6 +104,9 @@ impl Fields {
             siret: self.siret.get(),
             iban: self.iban.get(),
             payment_terms_days: days,
+            mediator: self.mediator.get(),
+            insurance: self.insurance.get(),
+            vat_on_debits: self.vat_on_debits.get(),
             urssaf_service_bnc: rate(self.urssaf_bnc, previous.urssaf_service_bnc),
             urssaf_service_bic: rate(self.urssaf_bic, previous.urssaf_service_bic),
             urssaf_vente: rate(self.urssaf_vente, previous.urssaf_vente),
@@ -172,6 +181,7 @@ fn screen() -> impl IntoView {
             <div class="card-glass">
                 <form on:submit=submit>
                     <Company fields=fields />
+                    <Mentions fields=fields />
                     <Urssaf fields=fields />
                     <Branding fields=fields />
                     <Smtp fields=fields />
@@ -226,6 +236,43 @@ fn FieldWithHint(label: &'static str, value: RwSignal<String>, hint: &'static st
                 on:input=move |ev| value.set(event_target_value(&ev))
             />
             <span class="metric-subtext">{hint}</span>
+        </div>
+    }
+}
+
+/// Mentions qui dépendent de l'activité, et que la loi n'impose qu'à certains.
+///
+/// Elles sont laissées en texte libre : ni le médiateur ni l'assureur ne suivent
+/// de format, et une liste fermée serait fausse pour quelqu'un. Un champ vide
+/// n'imprime rien — mieux vaut une facture sans mention qu'une mention creuse.
+#[component]
+fn Mentions(fields: Fields) -> impl IntoView {
+    view! {
+        <div class="settings-section">
+            <div class="settings-section-title">"Mentions obligatoires selon l'activité"</div>
+            <TextField label="Médiateur de la consommation" value=fields.mediator />
+            <span class="metric-subtext" style="display: block; margin: -0.75rem 0 1.25rem">
+                "Obligatoire dès que vous facturez des particuliers (art. L616-1 du code de la
+                 consommation) : nom du médiateur et adresse de son site."
+            </span>
+            <TextField label="Assurance professionnelle" value=fields.insurance />
+            <span class="metric-subtext" style="display: block; margin: -0.75rem 0 1.25rem">
+                "Obligatoire pour les activités qui y sont soumises, le bâtiment notamment
+                 (art. L112-11 du code des assurances) : assureur, garantie et couverture
+                 géographique. Imprimée sur les devis comme sur les factures."
+            </span>
+            <div class="form-group" style="margin-top: 1.25rem; display: flex; align-items: center; gap: 0.75rem">
+                <input
+                    type="checkbox"
+                    id="vatOnDebitsCheckbox"
+                    style="transform: scale(1.25); accent-color: var(--color-gold); cursor: pointer"
+                    prop:checked=move || fields.vat_on_debits.get()
+                    on:change=move |ev| fields.vat_on_debits.set(event_target_checked(&ev))
+                />
+                <label for="vatOnDebitsCheckbox" style="font-weight: 600; font-size: 0.9rem; cursor: pointer">
+                    "J'ai opté pour le paiement de la TVA d'après les débits"
+                </label>
+            </div>
         </div>
     }
 }

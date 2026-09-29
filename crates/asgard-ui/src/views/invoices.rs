@@ -305,6 +305,8 @@ pub(super) fn CreateForm(open: RwSignal<bool>) -> impl IntoView {
 
     let client = RwSignal::new(first_client);
     let service_type = RwSignal::new("service_bnc".to_string());
+    let operation = RwSignal::new(documents::default_operation("service_bnc"));
+    documents::follow_service_type(service_type, operation);
     let tva = RwSignal::new("20".to_string());
     let amount = RwSignal::new(String::new());
     let description = RwSignal::new(String::new());
@@ -342,6 +344,7 @@ pub(super) fn CreateForm(open: RwSignal<bool>) -> impl IntoView {
             tva_rate: validation::parse_amount(&tva.get()).unwrap_or_default(),
             date: format!("{}T00:00:00Z", super::modals::today_iso()),
             payment_terms_days: Some(crate::settings::load().payment_terms_days),
+            operation_kind: Some(operation.get()),
             status: None,
         };
 
@@ -361,6 +364,11 @@ pub(super) fn CreateForm(open: RwSignal<bool>) -> impl IntoView {
                         label="Type d'activité"
                         value=service_type
                         options=Signal::derive(documents::service_types)
+                    />
+                    <SelectField
+                        label="Nature de l'opération"
+                        value=operation
+                        options=Signal::derive(documents::operation_kinds)
                     />
                     <SelectField label="Taux de TVA (%)" value=tva options=Signal::derive(documents::tva_rates) />
                     <TextField

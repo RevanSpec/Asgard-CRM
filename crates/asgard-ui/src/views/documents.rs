@@ -3,6 +3,7 @@
 //! Les deux formulaires de `App.jsx` étaient deux copies presque identiques ;
 //! ils partagent désormais leurs listes et leurs champs.
 
+use asgard_core::model::{Operation, ServiceType};
 use leptos::prelude::*;
 
 /// Types d'activité proposés, libellés repris mot pour mot.
@@ -12,6 +13,51 @@ pub fn service_types() -> Vec<(String, String)> {
         ("service_bic".into(), "Prestation de service - Artisanale / Commerciale (BIC)".into()),
         ("vente".into(), "Achat / Vente de marchandises (BIC)".into()),
     ]
+}
+
+/// Natures d'opération proposées, dans les termes du décret n° 2022-1299.
+///
+/// La mention devient obligatoire avec la facturation électronique : une pièce
+/// doit dire si elle porte sur des biens, des services, ou les deux.
+pub fn operation_kinds() -> Vec<(String, String)> {
+    vec![
+        ("services".into(), "Prestations de services".into()),
+        ("biens".into(), "Livraisons de biens".into()),
+        ("mixte".into(), "Les deux".into()),
+    ]
+}
+
+/// Nature qu'un type d'activité laisse attendre.
+pub fn default_operation(service_type: &str) -> String {
+    Operation::from_service_type(ServiceType::from_stored(service_type))
+        .as_str()
+        .to_string()
+}
+
+/// La nature affichée doit-elle suivre un changement de type d'activité ?
+///
+/// Oui tant qu'elle vaut ce que l'ancien type laissait attendre — personne ne
+/// l'a donc choisie. Non sinon : un « les deux » saisi à dessein ne se retrouve
+/// pas tout seul.
+pub fn follows(previous_type: &str, shown: &str) -> bool {
+    shown == default_operation(previous_type)
+}
+
+/// Fait suivre la nature de l'opération au type d'activité, selon [`follows`].
+pub fn follow_service_type(service_type: RwSignal<String>, operation: RwSignal<String>) {
+    let previous = StoredValue::new(service_type.get_untracked());
+
+    Effect::new(move |_| {
+        let current = service_type.get();
+        let was = previous.get_value();
+        if current == was {
+            return;
+        }
+        if follows(&was, &operation.get_untracked()) {
+            operation.set(default_operation(&current));
+        }
+        previous.set_value(current);
+    });
 }
 
 /// Taux de TVA proposés.
@@ -95,6 +141,30 @@ mod tests {
         assert!(!can_remind("envoye"), "c'est l'orthographe des devis, pas des factures");
         assert!(!can_remind("payee"));
         assert!(!can_remind("brouillon"));
+    }
+
+    /// La nature proposée suit le type d'activité : une vente livre des biens,
+    /// tout le reste est une prestation.
+    #[test]
+    fn the_proposed_operation_follows_the_activity() {
+        assert_eq!(default_operation("vente"), "biens");
+        assert_eq!(default_operation("service_bnc"), "services");
+        assert_eq!(default_operation("service_bic"), "services");
+
+        let kinds: Vec<_> = operation_kinds().into_iter().map(|(k, _)| k).collect();
+        assert_eq!(kinds, ["services", "biens", "mixte"]);
+    }
+
+    /// Changer d'activité corrige une nature laissée par défaut, mais n'efface
+    /// pas un choix : « les deux » ne se retrouverait par aucune déduction.
+    #[test]
+    fn a_chosen_operation_survives_a_change_of_activity() {
+        assert!(follows("service_bnc", "services"), "valeur par défaut : elle peut suivre");
+        assert!(follows("vente", "biens"));
+
+        assert!(!follows("service_bnc", "mixte"), "choix délibéré : il doit rester");
+        assert!(!follows("service_bnc", "biens"), "choix délibéré aussi");
+        assert!(!follows("vente", "services"));
     }
 
     #[test]

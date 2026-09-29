@@ -33,6 +33,9 @@ fn issuer() -> Issuer {
         iban: "FR76 3000 2000 0001 2345 6789 012".into(),
         accent_colour: "#E5A93C".into(),
         logo: String::new(),
+        mediator: String::new(),
+        insurance: String::new(),
+        vat_on_debits: false,
     }
 }
 
@@ -43,7 +46,27 @@ fn coffee_client() -> Party {
         address: "45 rue du Bifrost, 75011 Paris".into(),
         phone: "06 55 55 55 55".into(),
         email: "valk@coffee.asgard".into(),
+        siren: String::new(),
+        vat_number: String::new(),
+        delivery_address: String::new(),
     }
+}
+
+/// Mentions légales d'une pièce, à partir du jeu de référence.
+///
+/// `legal_notice` reçoit désormais la pièce, l'émetteur et le client : les
+/// mentions ajoutées par le décret n° 2022-1299 viennent des trois. Ce
+/// raccourci garde les appels d'origine lisibles ; les cas nouveaux appellent
+/// la fonction directement, avec les parties qu'ils veulent éprouver.
+fn notice_for(
+    kind: DocumentKind,
+    tva_rate: Money,
+    iban: &str,
+    due: Option<CivilDate>,
+) -> String {
+    let document = Document { tva_rate, due_date: due, ..coffee_invoice() };
+    let issuer = Issuer { iban: iban.into(), ..issuer() };
+    legal_notice(kind, &document, &issuer, &coffee_client())
 }
 
 /// La facture 3 du jeu de référence : vente de marchandises à 5,5 %.
@@ -58,6 +81,7 @@ fn coffee_invoice() -> Document {
         amount_total: dec!(1530.12),
         due_date: Some(CivilDate::new(2026, 5, 18)),
         corrects: None,
+        operation: None,
         date: CivilDate::new(2026, 4, 18),
     }
 }
@@ -355,12 +379,12 @@ fn amounts_always_carry_two_decimals() {
 #[test]
 fn legal_notices_match_the_javascript_wording() {
     let due = Some(CivilDate::new(2026, 5, 18));
-    let invoice = legal_notice(DocumentKind::Invoice, dec!(20), "FR76 1234", due);
+    let invoice = notice_for(DocumentKind::Invoice, dec!(20), "FR76 1234", due);
     assert!(invoice.contains("Dispensé d'immatriculation au registre du commerce"));
     assert!(invoice.contains("IBAN : FR76 1234"));
     assert!(!invoice.contains("293 B"));
 
-    let exempt = legal_notice(DocumentKind::Invoice, dec!(0), "", due);
+    let exempt = notice_for(DocumentKind::Invoice, dec!(0), "", due);
     assert!(exempt.starts_with("TVA non applicable, article 293 B du CGI."));
     // Écart assumé avec le JavaScript, et seul écart de cette fonction :
     // l'original imprimait `FR76 0000 0000 0000 0000 0000 000` quand l'IBAN
@@ -373,7 +397,7 @@ fn legal_notices_match_the_javascript_wording() {
     assert!(!exempt.contains("IBAN"), "pas de mention d'IBAN sans IBAN : {exempt}");
     assert!(exempt.contains("Mode de règlement : Virement bancaire. Échéance : 18/05/2026."));
 
-    let estimate = legal_notice(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
+    let estimate = notice_for(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
     assert!(estimate.contains("valable pour une durée de 3 mois"));
     assert!(estimate.contains("Bon pour accord"));
 }
@@ -410,8 +434,7 @@ fn an_issuer_without_identity_cannot_edit_a_document() {
 /// absence est sanctionnable.
 #[test]
 fn an_invoice_carries_the_mandatory_late_payment_terms() {
-    let notice = legal_notice(
-        DocumentKind::Invoice,
+    let notice = notice_for(DocumentKind::Invoice,
         dec!(20),
         "FR76 1234",
         Some(CivilDate::new(2026, 5, 18)),
@@ -424,7 +447,7 @@ fn an_invoice_carries_the_mandatory_late_payment_terms() {
 
     // Un devis n'annonce ni échéance ni pénalités : il ne fait pas naître de
     // créance.
-    let estimate = legal_notice(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
+    let estimate = notice_for(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
     assert!(!estimate.contains("40 €"));
     assert!(!estimate.contains("Échéance"));
 }
@@ -433,7 +456,7 @@ fn an_invoice_carries_the_mandatory_late_payment_terms() {
 /// générale : inventer une date sur une pièce déjà émise serait pire.
 #[test]
 fn an_invoice_without_a_recorded_due_date_keeps_the_former_wording() {
-    let notice = legal_notice(DocumentKind::Invoice, dec!(20), "FR76 1234", None);
+    let notice = notice_for(DocumentKind::Invoice, dec!(20), "FR76 1234", None);
 
     assert!(notice.contains("Virement bancaire sous 30 jours"));
     assert!(!notice.contains("Échéance :"));
@@ -492,10 +515,10 @@ fn a_credit_note_names_the_invoice_it_corrects() {
 
 #[test]
 fn a_credit_note_carries_the_cgi_notice_when_exempt() {
-    let exempt = legal_notice(DocumentKind::CreditNote, dec!(0), "FR76 1234", None);
+    let exempt = notice_for(DocumentKind::CreditNote, dec!(0), "FR76 1234", None);
     assert!(exempt.starts_with("TVA non applicable, article 293 B du CGI."));
 
-    let taxed = legal_notice(DocumentKind::CreditNote, dec!(20), "FR76 1234", None);
+    let taxed = notice_for(DocumentKind::CreditNote, dec!(20), "FR76 1234", None);
     assert!(!taxed.contains("293 B"));
 }
 
@@ -671,4 +694,201 @@ fn an_empty_siret_prints_no_line() {
     .unwrap();
 
     assert!(!extract_text(&pdf).join(" | ").contains("SIRET :"));
+}
+
+// ------------------------------------------- mentions du décret n° 2022-1299
+
+/// La nature de l'opération est obligatoire, et elle se déduit du type
+/// d'activité tant qu'elle n'a pas été saisie : une pièce émise avant qu'on ne
+/// la demande ne doit pas perdre la mention pour autant.
+#[test]
+fn the_notice_states_what_the_invoice_covers() {
+    // Le jeu de référence facture du café : une livraison de biens.
+    let goods = notice_for(DocumentKind::Invoice, dec!(20), "FR76 1234", None);
+    assert!(
+        goods.contains("Opération portant exclusivement sur des livraisons de biens."),
+        "{goods}"
+    );
+
+    let services = Document {
+        service_type: ServiceType::ServiceBnc,
+        ..coffee_invoice()
+    };
+    let notice = legal_notice(DocumentKind::Invoice, &services, &issuer(), &coffee_client());
+    assert!(notice.contains("Opération portant exclusivement sur des prestations de services."));
+
+    // Le cas mixte ne se déduit d'aucun type : il ne vient que de la saisie.
+    let mixed = Document { operation: Some(Operation::Both), ..coffee_invoice() };
+    let notice = legal_notice(DocumentKind::Invoice, &mixed, &issuer(), &coffee_client());
+    assert!(notice
+        .contains("Opération portant sur des livraisons de biens et des prestations de services."));
+
+    // Ce qui est enregistré l'emporte sur ce que le type laisserait attendre.
+    let stored = Document { operation: Some(Operation::Services), ..coffee_invoice() };
+    let notice = legal_notice(DocumentKind::Invoice, &stored, &issuer(), &coffee_client());
+    assert!(notice.contains("exclusivement sur des prestations de services."));
+}
+
+/// L'adresse de livraison n'est exigée que lorsqu'elle diffère : la répéter à
+/// l'identique n'apprendrait rien au lecteur.
+#[test]
+fn a_delivery_address_is_printed_only_when_it_differs() {
+    let elsewhere = Party {
+        delivery_address: "7 quai de Nidavellir, 29200 Brest".into(),
+        ..coffee_client()
+    };
+    let notice = legal_notice(DocumentKind::Invoice, &coffee_invoice(), &issuer(), &elsewhere);
+    assert!(notice.contains("Livraison à : 7 quai de Nidavellir, 29200 Brest."), "{notice}");
+
+    let same = Party {
+        delivery_address: coffee_client().address.clone(),
+        ..coffee_client()
+    };
+    let notice = legal_notice(DocumentKind::Invoice, &coffee_invoice(), &issuer(), &same);
+    assert!(!notice.contains("Livraison à"), "{notice}");
+
+    // Rien de saisi, rien d'imprimé.
+    let notice = legal_notice(DocumentKind::Invoice, &coffee_invoice(), &issuer(), &coffee_client());
+    assert!(!notice.contains("Livraison à"));
+}
+
+/// L'option pour les débits ne concerne que qui facture de la TVA.
+#[test]
+fn the_debits_option_follows_the_vat() {
+    let opted = Issuer { vat_on_debits: true, ..issuer() };
+
+    let taxed = legal_notice(DocumentKind::Invoice, &coffee_invoice(), &opted, &coffee_client());
+    assert!(taxed.contains("Option pour le paiement de la TVA d'après les débits."), "{taxed}");
+
+    let exempt = Document { tva_rate: dec!(0), ..coffee_invoice() };
+    let notice = legal_notice(DocumentKind::Invoice, &exempt, &opted, &coffee_client());
+    assert!(!notice.contains("d'après les débits"), "{notice}");
+
+    // Sans option exercée, aucune mention — elle serait fausse.
+    let notice = legal_notice(DocumentKind::Invoice, &coffee_invoice(), &issuer(), &coffee_client());
+    assert!(!notice.contains("d'après les débits"));
+}
+
+/// Le médiateur et l'assurance dépendent de l'activité : ils ne s'impriment que
+/// s'ils sont renseignés, mais alors sur toutes les pièces — l'assurance figure
+/// sur les devis autant que sur les factures (art. L112-11 du code des
+/// assurances).
+#[test]
+fn activity_mentions_appear_on_every_document_when_filled() {
+    let declared = Issuer {
+        mediator: "Médiation Nord, mediation-nord.fr".into(),
+        insurance: "Assurances du Valhalla, RC pro, France entière".into(),
+        ..issuer()
+    };
+
+    for kind in [DocumentKind::Invoice, DocumentKind::Estimate, DocumentKind::CreditNote] {
+        let notice = legal_notice(kind, &coffee_invoice(), &declared, &coffee_client());
+        assert!(
+            notice.contains("Médiateur de la consommation : Médiation Nord, mediation-nord.fr"),
+            "{kind:?} : {notice}"
+        );
+        assert!(
+            notice.contains(
+                "Assurance professionnelle : Assurances du Valhalla, RC pro, France entière"
+            ),
+            "{kind:?} : {notice}"
+        );
+    }
+
+    // Non renseignés, ils ne laissent pas d'étiquette vide derrière eux.
+    let notice = legal_notice(DocumentKind::Invoice, &coffee_invoice(), &issuer(), &coffee_client());
+    assert!(!notice.contains("Médiateur"), "{notice}");
+    assert!(!notice.contains("Assurance"), "{notice}");
+}
+
+/// Un avoir corrige une facture : il en porte les mentions, faute de quoi la
+/// pièce rectificative en dirait moins que celle qu'elle rectifie.
+#[test]
+fn a_credit_note_carries_the_same_operation_mentions() {
+    let notice = notice_for(DocumentKind::CreditNote, dec!(20), "FR76 1234", None);
+
+    assert!(notice.contains("Opération portant exclusivement sur des livraisons de biens."));
+    // Sans pour autant réclamer un règlement : ce n'est pas son objet.
+    assert!(!notice.contains("Échéance"));
+    assert!(!notice.contains("40 €"));
+}
+
+/// Un devis annonce ce qu'il engage, pas les mentions d'une facture : la nature
+/// de l'opération et l'adresse de livraison n'y figurent pas.
+#[test]
+fn an_estimate_keeps_its_own_mentions() {
+    let notice = notice_for(DocumentKind::Estimate, dec!(20), "FR76 1234", None);
+
+    assert!(notice.contains("valable pour une durée de 3 mois"));
+    assert!(!notice.contains("Opération portant"), "{notice}");
+}
+
+/// Le SIREN du client s'imprime sous ses coordonnées, et le numéro de TVA
+/// remonte quand le SIREN manque.
+#[test]
+fn the_client_block_carries_its_identifiers() {
+    let identified = Party {
+        siren: "552 100 554".into(),
+        vat_number: "FR 12 552100554".into(),
+        ..coffee_client()
+    };
+
+    let pdf = render(
+        DocumentKind::Invoice,
+        &coffee_invoice(),
+        &identified,
+        &issuer(),
+        generated_at(),
+    )
+    .unwrap();
+    let text = extract_text(&pdf).join(" | ");
+
+    assert!(text.contains("SIREN : 552 100 554"), "{text}");
+    assert!(text.contains("N° TVA : FR 12 552100554"));
+
+    // Un client sans identifiants n'affiche pas d'étiquette vide.
+    let pdf = render(
+        DocumentKind::Invoice,
+        &coffee_invoice(),
+        &coffee_client(),
+        &issuer(),
+        generated_at(),
+    )
+    .unwrap();
+    let text = extract_text(&pdf).join(" | ");
+    assert!(!text.contains("SIREN"), "{text}");
+    assert!(!text.contains("N° TVA"));
+}
+
+/// Les mentions n'ont cessé de grandir : l'échéance, les pénalités, puis le
+/// décret. Elles s'impriment entre 195 mm et le trait du pied de page, à
+/// 260 mm — soit seize lignes. Ce test dit ce qu'il en reste, et échouera avant
+/// que la page ne déborde.
+#[test]
+fn the_legal_notice_fits_above_the_footer() {
+    let loaded = Issuer {
+        mediator: "Médiation de la consommation Nord-Ouest, www.mediation-nord-ouest.fr".into(),
+        insurance: "Assurances du Valhalla, RC professionnelle n° 12 345 678, France entière".into(),
+        vat_on_debits: true,
+        ..issuer()
+    };
+    let client = Party {
+        siren: "552 100 554".into(),
+        vat_number: "FR 12 552100554".into(),
+        delivery_address: "7 quai de Nidavellir, bâtiment C, 29200 Brest".into(),
+        ..coffee_client()
+    };
+
+    let notice = legal_notice(DocumentKind::Invoice, &coffee_invoice(), &loaded, &client);
+    let lines: usize = notice
+        .split('\n')
+        .map(|paragraph| wrap(paragraph, PAGE_WIDTH - 40.0, 8.0, false).len())
+        .sum();
+
+    // Première ligne à 195 mm, une ligne tous les 4 mm.
+    let bottom = 195.0 + 4.0 * lines as f64;
+    assert!(
+        bottom <= 260.0,
+        "{lines} lignes de mentions descendent jusqu'à {bottom} mm, sous le pied de page"
+    );
 }

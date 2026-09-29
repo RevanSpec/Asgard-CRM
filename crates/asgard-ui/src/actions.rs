@@ -308,6 +308,9 @@ struct IssuerArgs {
     custom_color: String,
     /// URL de données du logo, imprimé en tête de pièce.
     logo_base64: String,
+    mediator: String,
+    insurance: String,
+    vat_on_debits: bool,
 }
 
 impl From<&Settings> for IssuerArgs {
@@ -322,6 +325,9 @@ impl From<&Settings> for IssuerArgs {
             iban: s.iban.clone(),
             custom_color: s.custom_color.clone(),
             logo_base64: s.logo_base64.clone(),
+            mediator: s.mediator.clone(),
+            insurance: s.insurance.clone(),
+            vat_on_debits: s.vat_on_debits,
         }
     }
 }
