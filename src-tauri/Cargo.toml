@@ -1,6 +1,6 @@
 [package]
 name = "asgard-crm"
-version = "0.1.0"
+version.workspace = true
 description = "Asgard CRM — gestion et facturation pour micro-entrepreneurs"
 authors = ["Asgard CRM"]
 license.workspace = true

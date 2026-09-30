@@ -3,12 +3,12 @@
 # Déclenchée par une étiquette `v*` — jamais par une fusion : publier est un
 # geste délibéré, qui se fait en poussant une étiquette.
 #
-#     git tag v0.2.0 && git push --tags
+#     git tag v1.0.0 && git push --tags
 #
 # La version de l'étiquette doit être celle de `tauri.conf.json`, qui nomme
 # l'installeur. Une étiquette qui ne correspond pas arrête le travail avant de
 # compiler quoi que ce soit : mieux vaut dix secondes perdues qu'une release
-# nommée `v0.2.0` contenant un installeur `0.1.0`.
+# nommée `v1.0.0` contenant un installeur `0.1.0`.
 
 name: Publication
 

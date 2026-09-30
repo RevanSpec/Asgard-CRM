@@ -10,6 +10,7 @@ members = ["src-tauri", "crates/asgard-core", "crates/asgard-ipc", "crates/asgar
 # Déclaré une fois, hérité par les membres : un crate publié sans licence n'est
 # réutilisable par personne, quoi qu'en dise le dépôt.
 [workspace.package]
+version = "1.0.0"
 license = "MIT"
 repository = "https://github.com/RevanSpec/Asgard-CRM"
 edition = "2021"

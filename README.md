@@ -2,6 +2,21 @@
 
 **Asgard CRM** est une application de bureau légère, moderne et performante conçue spécifiquement pour les micro-entrepreneurs et auto-entrepreneurs français. Écrite en **Rust** de bout en bout — hôte **Tauri**, interface **Leptos** compilée en WebAssembly — elle permet de gérer l'intégralité de votre activité commerciale et comptable en local, garantissant une confidentialité totale de vos données.
 
+![Le tableau de bord d'Asgard CRM](docs/captures/tableau-de-bord.png)
+
+<details>
+<summary>Deux autres écrans : les factures, et la comptabilité</summary>
+
+![La liste des factures](docs/captures/factures.png)
+
+![Le livre des recettes encaissées](docs/captures/comptabilite.png)
+
+</details>
+
+> Ces captures sont prises automatiquement pendant le parcours de vérification,
+> sur le jeu de démonstration : elles montrent l'application telle qu'elle est à
+> l'instant où la version est publiée.
+
 ---
 
 ## 🚀 Fonctionnalités clés
@@ -157,8 +172,11 @@ commercial, à condition de conserver la mention de copyright. Aucune garantie
 n'est fournie : c'est un outil écrit pour un usage personnel, publié dans
 l'espoir qu'il serve à d'autres.
 
-Les polices Inter et Outfit, embarquées dans l'interface, sont publiées sous
-[SIL Open Font License 1.1](crates/asgard-ui/assets/fonts/OFL-Inter.txt).
+Les polices [Inter](crates/asgard-ui/assets/fonts/OFL-Inter.txt) et
+[Outfit](crates/asgard-ui/assets/fonts/OFL-Outfit.txt), embarquées dans
+l'interface, sont publiées sous **SIL Open Font License 1.1**. Le texte de leurs
+licences accompagne les fichiers, dans `crates/asgard-ui/assets/fonts/`, comme
+l'OFL l'exige pour toute redistribution.
 
 ### Publier une version
 
@@ -167,7 +185,7 @@ et l'attache à une *release* GitHub. Il se déclenche sur une étiquette, jamai
 sur une fusion — publier est un geste délibéré :
 
 ```bash
-git tag v0.2.0 && git push --tags
+git tag v1.0.0 && git push --tags
 ```
 
 La version de l'étiquette doit être celle de `src-tauri/tauri.conf.json`, qui
